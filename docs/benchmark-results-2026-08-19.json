@@ -1,0 +1,56 @@
+{
+  "schema": "celiums-bitnet-benchmark-results-v1",
+  "date": "2026-08-19",
+  "system": {
+    "provider": "DigitalOcean",
+    "size": "c-60-intel",
+    "region": "nyc3",
+    "cpu": "Intel Xeon Platinum 8358",
+    "vcpus": 60,
+    "threads_per_core": 1,
+    "memory_mib": 122880,
+    "compiler": "GCC 13.3.0",
+    "build_type": "Release"
+  },
+  "source": {
+    "root_commit": "df0165b08d0d579fa67a47a163707ff73ce570c1",
+    "submodule_commit": "d608d85b768b65ea75b6aa4fe91501b8cdf4e773",
+    "build_commit_reported": "d608d85b7",
+    "gemv8_commit": "3015cb476"
+  },
+  "model": {
+    "sha256": "e23b16fa81b890e8b65e676262b645e8ffa5ae1f6df89dadaf793246826bbd90"
+  },
+  "settings": {
+    "n_prompt": 128,
+    "n_gen": 128,
+    "batch": 128,
+    "ubatch": 128,
+    "repetitions": 5,
+    "strict_affinity": true
+  },
+  "baseline": [
+    {"threads": 1, "pp128_avg_ts": 57.912856, "tg128_avg_ts": 8.073422},
+    {"threads": 30, "pp128_avg_ts": 741.763775, "tg128_avg_ts": 64.896434},
+    {"threads": 60, "pp128_avg_ts": 836.124617, "tg128_avg_ts": 56.434243}
+  ],
+  "gemv8": [
+    {"threads": 1, "pp128_avg_ts": 57.907404, "tg128_avg_ts": 8.746407},
+    {"threads": 30, "pp128_avg_ts": 722.860305, "tg128_avg_ts": 67.141012},
+    {"threads": 60, "pp128_avg_ts": 847.836983, "tg128_avg_ts": 56.433349}
+  ],
+  "speedup": [
+    {"threads": 1, "pp128": 0.999906, "tg128": 1.083361},
+    {"threads": 30, "pp128": 0.974516, "tg128": 1.034586},
+    {"threads": 60, "pp128": 1.014007, "tg128": 0.999984}
+  ],
+  "oracle": {
+    "preopt_sha256": "ca4b1bbd160fc17b989a1483c73f5118f02f64a730ee353aa86b77a2b4b19a9a",
+    "postopt_sha256": "ca4b1bbd160fc17b989a1483c73f5118f02f64a730ee353aa86b77a2b4b19a9a",
+    "bitwise_equal": true
+  },
+  "raw_artifacts": {
+    "baseline_archive_sha256": "e630fe3917e7f4a6d6a5e430281ab91169cf7d6531c60725ea0cd9db1c6333f7",
+    "gemv8_archive_sha256": "0116f869c13fdd12f7b9aca880db6ca6fc46c6a0dc275e3fc94f61009648488d"
+  }
+}

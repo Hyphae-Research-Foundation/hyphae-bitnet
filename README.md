@@ -266,6 +266,8 @@ Raw full-vocabulary regression baselines are documented in
 [docs/EXACTNESS_ORACLE.md](docs/EXACTNESS_ORACLE.md).
 The fixed Phase 0 result manifest is
 [`docs/exactness-oracle-results-2026-08-19.json`](docs/exactness-oracle-results-2026-08-19.json).
+The exact-commit C-60 baseline and first strict tinyBLAS optimization are in
+[`docs/benchmark-results-2026-08-19.json`](docs/benchmark-results-2026-08-19.json).
 
 ## Repository Map
 
