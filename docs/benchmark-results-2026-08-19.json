@@ -34,23 +34,24 @@
     {"threads": 30, "pp128_avg_ts": 741.763775, "tg128_avg_ts": 64.896434},
     {"threads": 60, "pp128_avg_ts": 836.124617, "tg128_avg_ts": 56.434243}
   ],
-  "gemv8": [
-    {"threads": 1, "pp128_avg_ts": 57.907404, "tg128_avg_ts": 8.746407},
-    {"threads": 30, "pp128_avg_ts": 722.860305, "tg128_avg_ts": 67.141012},
-    {"threads": 60, "pp128_avg_ts": 847.836983, "tg128_avg_ts": 56.433349}
+  "gemv8_committed": [
+    {"threads": 1, "pp128_avg_ts": 57.787434, "tg128_avg_ts": 8.704772},
+    {"threads": 30, "pp128_avg_ts": 780.306289, "tg128_avg_ts": 68.697174},
+    {"threads": 60, "pp128_avg_ts": 865.662027, "tg128_avg_ts": 56.858350}
   ],
   "speedup": [
-    {"threads": 1, "pp128": 0.999906, "tg128": 1.083361},
-    {"threads": 30, "pp128": 0.974516, "tg128": 1.034586},
-    {"threads": 60, "pp128": 1.014007, "tg128": 0.999984}
+    {"threads": 1, "pp128": 0.997834, "tg128": 1.078205},
+    {"threads": 30, "pp128": 1.051960, "tg128": 1.058567},
+    {"threads": 60, "pp128": 1.035327, "tg128": 1.007515}
   ],
   "oracle": {
     "preopt_sha256": "ca4b1bbd160fc17b989a1483c73f5118f02f64a730ee353aa86b77a2b4b19a9a",
-    "postopt_sha256": "ca4b1bbd160fc17b989a1483c73f5118f02f64a730ee353aa86b77a2b4b19a9a",
+    "postopt_sha256": "2c8bdcced1d89f0d7ef5faa1df5a9c5cf46f38bf5bbc02c9ac34b14b711e8f67",
     "bitwise_equal": true
   },
   "raw_artifacts": {
     "baseline_archive_sha256": "e630fe3917e7f4a6d6a5e430281ab91169cf7d6531c60725ea0cd9db1c6333f7",
-    "gemv8_archive_sha256": "0116f869c13fdd12f7b9aca880db6ca6fc46c6a0dc275e3fc94f61009648488d"
+    "gemv8_archive_sha256": "0116f869c13fdd12f7b9aca880db6ca6fc46c6a0dc275e3fc94f61009648488d",
+    "final_committed_archive_sha256": "5f5c8e1c2c87b3358620fbcaa22ae8e3bd964fe32db91c07d7bde14a43df9e87"
   }
 }

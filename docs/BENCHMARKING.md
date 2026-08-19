@@ -77,17 +77,18 @@ targets with `-march=native`. Every cell used strict affinity, batch/ubatch
 
 | Threads | Baseline pp128 | GEMV8 pp128 | Baseline tg128 | GEMV8 tg128 |
 | ---: | ---: | ---: | ---: | ---: |
-| 1 | 57.91 | 57.91 | 8.07 | 8.75 |
-| 30 | 741.76 | 722.86 | 64.90 | 67.14 |
-| 60 | 836.12 | 847.84 | 56.43 | 56.43 |
+| 1 | 57.91 | 57.79 | 8.07 | 8.70 |
+| 30 | 741.76 | 780.31 | 64.90 | 68.70 |
+| 60 | 836.12 | 865.66 | 56.43 | 56.86 |
 
 The first strict optimization adds an 8-row tinyBLAS tile only for decode
 (`n=1`). It preserves the same integer accumulation order and leaves prefill
 unchanged. Decode improved 8.34% at one thread and 3.46% at 30 threads. At 60
-threads decode is unchanged and remains slower than 30 threads; pp128 movement
-is benchmark variance because GEMV8 is not selected there. The pre/post remote
-oracle captures have the same SHA256,
-`ca4b1bbd160fc17b989a1483c73f5118f02f64a730ee353aa86b77a2b4b19a9a`.
+threads decode remains slower than 30 threads. A clean rebuild of the final
+commits measured decode improvements of 7.82%, 5.86%, and 0.75% at 1, 30, and
+60 threads. pp128 movement is benchmark variance because GEMV8 is not selected
+there. The pre/post remote oracle tensor values are bitwise identical; their
+container hashes differ because build metadata records different commits.
 
 The checked-in machine-readable summary is
 `docs/benchmark-results-2026-08-19.json`. The temporary benchmark Droplet was
