@@ -1,9 +1,12 @@
-# Microsoft Open Source Code of Conduct
+# Code Of Conduct
 
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
+Celiums BitNet contributors must communicate professionally and respectfully.
+Harassment, discrimination, threats, disclosure of private information, and
+deliberate disruption are not tolerated.
 
-Resources:
+Project maintainers may remove content or restrict participation when behavior
+is unsafe, abusive, or materially harms the project or its community.
 
-- [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/)
-- [Microsoft Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/)
-- Contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with questions or concerns
+Report conduct concerns privately through the contact channel published on the
+Celiums Solutions LLC organization profile. Celiums maintainers are responsible
+for reviewing reports and applying this policy.

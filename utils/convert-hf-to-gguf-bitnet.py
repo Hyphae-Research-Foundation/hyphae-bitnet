@@ -23,10 +23,11 @@ if TYPE_CHECKING:
     from torch import Tensor
 
 if 'NO_LOCAL_GGUF' not in os.environ:
-    sys.path.insert(1, str(Path(__file__).parent / 'gguf-py'))
+    sys.path.insert(1, str(Path(__file__).parent.parent / '3rdparty' / 'llama.cpp' / 'gguf-py'))
 import gguf
 
 from convert import LlamaHfVocab, permute
+from i2s_format import quantize_to_i2_s
 
 logger = logging.getLogger("hf-to-gguf")
 
@@ -156,8 +157,10 @@ class Model(ABC):
         # Map ggml tensor type to llama ftype for general.file_type metadata
         ftype_val = self.ftype
         if self.ftype == gguf.GGMLQuantizationType.I2_S:
-            ftype_val = 40  # LLAMA_FTYPE_MOSTLY_I2_S (matches official model)
+            ftype_val = gguf.LlamaFileType.MOSTLY_I2_S
         self.gguf_writer.add_file_type(ftype_val)
+        if self.ftype not in (gguf.GGMLQuantizationType.F32, gguf.GGMLQuantizationType.F16):
+            self.gguf_writer.add_quantization_version(gguf.GGML_QUANT_VERSION)
         logger.info(f"gguf: file type = {ftype_val}")
 
     def write_tensors(self):
@@ -663,70 +666,6 @@ def preprocess_weights_tl2(
                              weight.shape[0]), mode='constant', constant_values=0)
     return weight
 
-def quantize_to_i2_s(w: np.ndarray, override_scale: float = None) -> np.ndarray:
-    """Quantize a float weight matrix to I2_S ternary format.
-
-    I2_S format: packed ternary bytes (4 values per byte) + 32-byte tail with f32 scale.
-    Dequantization: y = scale * ternary, where ternary in {-1, 0, +1}.
-
-    Args:
-        w: float weight tensor of shape (M, K)
-        override_scale: if provided, use this as the I2_S scale instead of computing from data.
-                       For offline-quantized BitNet models, this should be the weight_scale value.
-    """
-    M, K = w.shape
-    n = M * K
-    w_flat = w.flatten().astype(np.float32)
-
-    # Compute scale for I2_S dequantization
-    if override_scale is not None:
-        # override_scale is weight_scale from offline-quantized models ≈ mean(|original_bf16_weights|)
-        # Use it directly as the I2_S scale
-        scale = np.float32(override_scale)
-        # Weights are already ternary {-1, 0, 1}, use directly
-        q_float = w_flat
-    else:
-        # w_flat comes from weight_quant: values are ±scale or 0
-        # Use the first nonzero absolute value as scale (matches C quantize_i2_s)
-        nonzero = np.abs(w_flat[np.abs(w_flat) > 1e-6])
-        if len(nonzero) > 0:
-            scale = np.float32(nonzero[0])
-        else:
-            scale = np.float32(1e-5)
-        # Quantize to ternary {-1, 0, 1}
-        inv_scale = 1.0 / scale
-        q_float = np.round(w_flat * inv_scale).clip(-1, 1)
-
-    # Map ternary {-1, 0, 1} -> I2_S encoding {0, 1, 2}
-    q = np.ones(n, dtype=np.uint8)  # default to 1 (zero)
-    q[q_float > 0.5] = 2    # +1 -> 2
-    q[q_float < -0.5] = 0   # -1 -> 0
-
-    # Pack into I2_S layout: 128-value blocks, interleaved into 32 bytes
-    pad_len = (128 - n % 128) % 128
-    if pad_len:
-        q = np.pad(q, (0, pad_len), constant_values=1)
-
-    n_padded = len(q)
-    n_blocks = n_padded // 128
-    q = q.reshape(n_blocks, 4, 32)
-
-    packed = (q[:, 0, :].astype(np.uint8) << 6) | \
-             (q[:, 1, :].astype(np.uint8) << 4) | \
-             (q[:, 2, :].astype(np.uint8) << 2) | \
-             (q[:, 3, :].astype(np.uint8))
-    packed = packed.reshape(-1).astype(np.uint8)
-
-    # I2_S format: packed_bytes + 32-byte aligned tail (scale in first 4 bytes)
-    packed_size = n // 4
-    total_size = packed_size + 32
-    result = np.zeros(total_size, dtype=np.uint8)
-    result[:len(packed)] = packed[:packed_size]
-    result[packed_size:packed_size+4] = np.frombuffer(scale.tobytes(), dtype=np.uint8)
-
-    return result
-
-
 def transform_to_tl1(x: np.ndarray):
     scale = np.max(np.abs(x))
     # res = np.round(x / scale + 2).astype(np.uint8)
@@ -797,14 +736,16 @@ class LlamaModel(Model):
             if data_torch.dtype not in (torch.float16, torch.float32):
                 data_torch = data_torch.to(torch.float32)
 
-            if name.replace(".weight", "") in scale_map:
+            scale_name = name.replace(".weight", "")
+            if scale_name in scale_map:
                 data_torch = data_torch.to(torch.uint8)
                 origin_shape = data_torch.shape
                 shift = torch.tensor([0, 2, 4, 6], dtype=torch.uint8).reshape((4, *(1 for _ in range(len(origin_shape)))))
                 data_torch = data_torch.unsqueeze(0).expand((4, *origin_shape)) >> shift
                 data_torch = data_torch & 3
                 data_torch = (data_torch.float() - 1).reshape((origin_shape[0] * 4, *origin_shape[1:]))
-                data_torch = data_torch / scale_map[name.replace(".weight", "")].float()
+                if self.ftype != gguf.GGMLQuantizationType.I2_S:
+                    data_torch = data_torch * scale_map[scale_name].float()
 
             # use the first number-like part of the tensor name as the block id
             bid = None
@@ -866,7 +807,18 @@ class LlamaModel(Model):
 
                 i2_scale = None
                 if self.ftype != gguf.GGMLQuantizationType.F32 and extra_f16 and not extra_f32:
-                    if self.ftype == gguf.GGMLQuantizationType.TL1 and suit_i2:
+                    if self.ftype == gguf.GGMLQuantizationType.I2_S and suit_i2:
+                        orig_scale = scale_map.get(name.replace(".weight", ""))
+                        override_scale = orig_scale.item() if orig_scale is not None else None
+                        byteorder = "big" if self.endianess == gguf.GGUFEndian.BIG else "little"
+                        data = quantize_to_i2_s(
+                            data,
+                            override_scale=override_scale,
+                            byteorder=byteorder,
+                        )
+                        assert data.dtype == np.uint8
+                        data_qtype = gguf.GGMLQuantizationType.I2_S
+                    elif self.ftype == gguf.GGMLQuantizationType.TL1 and suit_i2:
                         data, i2_scale = transform_to_tl1(data)
                         assert data.dtype == np.uint8
                         assert i2_scale.dtype == np.float32
@@ -1102,10 +1054,10 @@ class BitnetModel(Model):
                 data_torch = data_torch.unsqueeze(0).expand((4, *origin_shape)) >> shift
                 data_torch = data_torch & 3
                 data_torch = (data_torch.float() - 1).reshape((origin_shape[0] * 4, *origin_shape[1:]))
-                # For F16/F32 output: divide by weight_scale to get full float values
+                # For F16/F32 output: apply weight_scale to recover full float values
                 # For I2_S output: keep as ternary {-1,0,1}, scale is passed separately to quantize_to_i2_s
                 if self.ftype not in (gguf.GGMLQuantizationType.I2_S, gguf.GGMLQuantizationType.TL1, gguf.GGMLQuantizationType.TL2):
-                    data_torch = data_torch / scale_map[name.replace(".weight", "")].float()
+                    data_torch = data_torch * scale_map[name.replace(".weight", "")].float()
             # convert any unsupported data types to float32
             elif data_torch.dtype not in (torch.float16, torch.float32):
                 data_torch = data_torch.to(torch.float32)
@@ -1166,7 +1118,13 @@ class BitnetModel(Model):
                         # Use original weight_scale if available (offline-quantized models)
                         orig_scale = scale_map.get(name.replace(".weight", ""))
                         override_scale = orig_scale.item() if orig_scale is not None else None
-                        data = quantize_to_i2_s(data, override_scale=override_scale)
+                        byteorder = "big" if self.endianess == gguf.GGUFEndian.BIG else "little"
+                        data = quantize_to_i2_s(
+                            data,
+                            override_scale=override_scale,
+                            already_quantized=override_scale is None,
+                            byteorder=byteorder,
+                        )
                     elif self.ftype == gguf.GGMLQuantizationType.TL1 and suit_i2:
                         data, i2_scale = transform_to_tl1(data)
                         assert data.dtype == np.uint8

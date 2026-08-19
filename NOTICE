@@ -1,0 +1,28 @@
+Celiums BitNet
+Copyright 2026 Celiums Solutions LLC
+
+Celiums BitNet is an independent derivative of Microsoft BitNet:
+https://github.com/microsoft/BitNet
+
+Initial Microsoft BitNet baseline:
+0b341e582afbf9e1011f24744b554c96a3477eb5
+
+Initial llama.cpp dependency baseline:
+https://github.com/isHuangXin/llama.cpp
+390c307752ab78fd8189f359d6954c9ba1be74af
+
+Celiums-authored modifications, documentation, tests, build integration, and
+tooling are Copyright 2026 Celiums Solutions LLC and are licensed under the
+Apache License, Version 2.0, found in LICENSE.
+
+Microsoft and the original contributors retain copyright in upstream code.
+Microsoft BitNet portions retain the MIT terms reproduced in LICENSE-MIT.
+The llama.cpp dependency and third-party components retain their respective
+licenses and attribution notices.
+
+Celiums BitNet is not affiliated with, sponsored by, endorsed by, or supported
+by Microsoft. Microsoft, BitNet, Hugging Face, model names, and other
+third-party names may be trademarks of their respective owners.
+
+Model files are separate artifacts. Their licenses and terms are defined by
+their publishers and are not granted by this repository's software licenses.

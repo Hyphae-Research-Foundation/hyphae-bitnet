@@ -14,6 +14,7 @@
 *.gguf.json
 *.lastModified
 *.log
+*.tar.gz
 *.metallib
 *.o
 *.so
@@ -43,5 +44,5 @@ __pycache__/
 */poetry.lock
 poetry.toml
 
-build/
+build*/
 logs/

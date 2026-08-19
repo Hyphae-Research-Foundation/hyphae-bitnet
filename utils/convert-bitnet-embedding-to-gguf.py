@@ -16,10 +16,11 @@ import torch
 
 # Allow using the local gguf-py if present
 if "NO_LOCAL_GGUF" not in os.environ:
-    _local_gguf = Path(__file__).parent / "gguf-py"
+    _local_gguf = Path(__file__).parent.parent / "3rdparty" / "llama.cpp" / "gguf-py"
     if _local_gguf.exists():
         sys.path.insert(1, str(_local_gguf))
 import gguf
+from i2s_format import quantize_to_i2_s
 
 logger = logging.getLogger("convert-bitnet-embedding")
 
@@ -364,6 +365,8 @@ def set_gguf_parameters(gguf_writer: gguf.GGUFWriter, hparams: dict, dir_model: 
         gguf_writer.add_layer_norm_rms_eps(hparams["rms_norm_eps"])
 
     gguf_writer.add_file_type(ftype)
+    if ftype == gguf.LlamaFileType.MOSTLY_I2_S:
+        gguf_writer.add_quantization_version(gguf.GGML_QUANT_VERSION)
 
     # Pooling type for embedding models
     # Try to read from modules.json / 1_Pooling/config.json (sentence-transformers convention)
@@ -386,9 +389,8 @@ def set_gguf_parameters(gguf_writer: gguf.GGUFWriter, hparams: dict, dir_model: 
                         pooling_type = gguf.PoolingType.LAST
                 break
     if pooling_type is None:
-        # Default to MEAN pooling for embedding models
-        logger.info("  No pooling config found, defaulting to MEAN pooling")
-        pooling_type = gguf.PoolingType.MEAN
+        logger.info("  No pooling config found, defaulting to LAST pooling")
+        pooling_type = gguf.PoolingType.LAST
     gguf_writer.add_pooling_type(pooling_type)
 
     logger.info(f"  n_layers={n_layers}, n_embd={n_embd}, n_head={n_head}, n_head_kv={n_head_kv}, n_ff={n_ff}, head_dim={head_dim}")
@@ -411,85 +413,6 @@ def iter_tensors(dir_model: Path) -> Iterator[tuple[str, torch.Tensor]]:
         with safe_open(str(sf_path), framework="pt", device="cpu") as f:
             for name in f.keys():
                 yield name, f.get_tensor(name)
-
-
-# ---------------------------------------------------------------------------
-# I2_S ternary packing (platform-independent)
-# ---------------------------------------------------------------------------
-#
-# I2_S format (from dequantize_row_i2_s in ggml-quants.c):
-#   - Every 128 values form a block, packed into 32 bytes
-#   - Each byte stores 4 values at positions [0*32+gp, 1*32+gp, 2*32+gp, 3*32+gp]
-#     where gp is the byte index within the 32-byte group
-#   - Encoding per byte: c0=(b>>6)&3, c1=(b>>4)&3, c2=(b>>2)&3, c3=(b>>0)&3
-#   - Value mapping: 0 -> -1, 1 -> 0, 2 -> +1, 3 -> 0
-#   - Scale is stored as a separate tensor (tensor_name + "_scale")
-
-def quantize_to_i2_s(w: np.ndarray) -> np.ndarray:
-    """Quantize float weights to ternary and pack into I2_S layout.
-
-    Uses the same quantization as BitLinear weight_quant_minmax():
-        scale = 1.0 / mean(|w|)
-        q = round(w * scale).clamp(-1, 1)
-        dequant = q / scale = q * mean(|w|)
-
-    The I2_S format is self-contained: packed ternary bytes followed by a f32 scale
-    appended at the end of the data buffer.
-
-    Args:
-        w: float weight tensor of shape (M, K)
-
-    Returns:
-        packed_data: uint8 array containing I2_S packed bytes + scale (as 4 trailing bytes)
-    """
-    M, K = w.shape
-    n = M * K
-    w_flat = w.flatten().astype(np.float32)
-
-    # BitLinear weight_quant_minmax: scale = 1/mean(|w|), then round & clamp
-    abs_mean = np.mean(np.abs(w_flat))
-    abs_mean = max(abs_mean, 1e-5)
-    inv_scale = 1.0 / abs_mean
-    q_float = np.round(w_flat * inv_scale).clip(-1, 1)  # ternary: {-1, 0, 1}
-
-    # scale for dequantization = abs_mean (i.e., dequant = q * abs_mean)
-    scale = np.float32(abs_mean)
-
-    # Map ternary {-1, 0, 1} -> I2_S encoding {0, 1, 2}
-    #   -1 -> 0,  0 -> 1,  +1 -> 2
-    q = np.ones(n, dtype=np.uint8)  # default to 1 (zero)
-    q[q_float > 0.5] = 2    # +1 -> 2
-    q[q_float < -0.5] = 0   # -1 -> 0
-
-    # Pack into I2_S layout: 128-value blocks, interleaved into 32 bytes
-    # Pad to multiple of 128
-    pad_len = (128 - n % 128) % 128
-    if pad_len:
-        q = np.pad(q, (0, pad_len), constant_values=1)
-
-    n_padded = len(q)
-    n_blocks = n_padded // 128
-
-    q = q.reshape(n_blocks, 4, 32)
-
-    # Pack: byte = (c0 << 6) | (c1 << 4) | (c2 << 2) | c3
-    packed = (q[:, 0, :].astype(np.uint8) << 6) | \
-             (q[:, 1, :].astype(np.uint8) << 4) | \
-             (q[:, 2, :].astype(np.uint8) << 2) | \
-             (q[:, 3, :].astype(np.uint8))
-
-    packed = packed.reshape(-1).astype(np.uint8)
-
-    # I2_S format: packed_bytes + 32-byte aligned tail (scale in first 4 bytes of tail)
-    # Total size = n_elements / 4 + 32  (as defined in ggml.c)
-    packed_size = n // 4
-    total_size = packed_size + 32
-    result = np.zeros(total_size, dtype=np.uint8)
-    result[:len(packed)] = packed[:packed_size]
-    # Write scale as float32 at offset packed_size
-    result[packed_size:packed_size+4] = np.frombuffer(scale.tobytes(), dtype=np.uint8)
-
-    return result
 
 
 # ---------------------------------------------------------------------------
@@ -535,7 +458,7 @@ def main():
     elif args.outtype == "f16":
         ftype = 1  # GGML F16
     else:  # i2_s
-        ftype = 40  # LLAMA_FTYPE_MOSTLY_I2_S
+        ftype = gguf.LlamaFileType.MOSTLY_I2_S
 
     logger.info(f"Converting {dir_model.name} (arch={arch}) to GGUF ({args.outtype})")
 

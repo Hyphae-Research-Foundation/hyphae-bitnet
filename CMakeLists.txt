@@ -1,6 +1,7 @@
-cmake_minimum_required(VERSION 3.14)  # for add_link_options and implicit target directories.
-project("bitnet.cpp" C CXX)
+cmake_minimum_required(VERSION 3.22)
+project(CeliumsBitNet VERSION 0.1.0 LANGUAGES C CXX)
 include(CheckIncludeFileCXX)
+include(CTest)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -12,8 +13,10 @@ endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # option list
-option(BITNET_ARM_TL1    "bitnet.cpp: use tl1 on arm platform"    OFF)
-option(BITNET_X86_TL2    "bitnet.cpp: use tl2 on x86 platform"    OFF)
+option(BITNET_ARM_TL1    "Celiums BitNet: use TL1 on ARM"          OFF)
+option(BITNET_X86_TL2    "Celiums BitNet: use TL2 on x86"          OFF)
+option(CELIUMS_BITNET_STRICT "Preserve the Celiums BitNet numerical contract" ON)
+option(CELIUMS_BITNET_EXPERIMENTAL "Build experimental kernels" OFF)
 
 
 set(CMAKE_CXX_STANDARD_REQUIRED true)
@@ -31,48 +34,22 @@ endif()
 if (GGML_BITNET_X86_TL2)
     add_compile_definitions(GGML_BITNET_X86_TL2)
 endif()
-
-if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    add_compile_options(-fpermissive)
+if (CELIUMS_BITNET_STRICT)
+    add_compile_definitions(CELIUMS_BITNET_STRICT)
+endif()
+if (CELIUMS_BITNET_EXPERIMENTAL)
+    add_compile_definitions(CELIUMS_BITNET_EXPERIMENTAL)
 endif()
 
 find_package(Threads REQUIRED)
 
 add_subdirectory(src)
-set(LLAMA_BUILD_SERVER ON CACHE BOOL "Build llama.cpp server" FORCE)
+option(CELIUMS_BITNET_BUILD_SERVER "Build the llama.cpp server" ON)
+set(LLAMA_BUILD_SERVER ${CELIUMS_BITNET_BUILD_SERVER} CACHE BOOL "Build llama.cpp server" FORCE)
+set(LLAMA_TESTS_INSTALL OFF CACHE BOOL "Do not install llama.cpp tests" FORCE)
 add_subdirectory(3rdparty/llama.cpp)
 
 # install
 
 include(GNUInstallDirs)
-include(CMakePackageConfigHelpers)
-
-set(LLAMA_INCLUDE_INSTALL_DIR ${CMAKE_INSTALL_INCLUDEDIR}
-    CACHE PATH "Location of header files")
-set(LLAMA_LIB_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}
-    CACHE PATH "Location of library files")
-set(LLAMA_BIN_INSTALL_DIR ${CMAKE_INSTALL_BINDIR}
-    CACHE PATH "Location of binary files")
-set(LLAMA_BUILD_NUMBER ${BUILD_NUMBER})
-set(LLAMA_BUILD_COMMIT ${BUILD_COMMIT})
-set(LLAMA_INSTALL_VERSION 0.0.${BUILD_NUMBER})
-
-get_target_property(GGML_DIRECTORY ggml SOURCE_DIR)
-get_directory_property(GGML_DIR_DEFINES DIRECTORY ${GGML_DIRECTORY} COMPILE_DEFINITIONS)
-get_target_property(GGML_TARGET_DEFINES ggml COMPILE_DEFINITIONS)
-set(GGML_TRANSIENT_DEFINES ${GGML_TARGET_DEFINES} ${GGML_DIR_DEFINES})
-get_target_property(GGML_LINK_LIBRARIES ggml LINK_LIBRARIES)
-
-get_directory_property(LLAMA_TRANSIENT_DEFINES COMPILE_DEFINITIONS)
-
-write_basic_package_version_file(
-        ${CMAKE_CURRENT_BINARY_DIR}/LlamaConfigVersion.cmake
-    VERSION ${LLAMA_INSTALL_VERSION}
-    COMPATIBILITY SameMajorVersion)
-
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/LlamaConfig.cmake
-              ${CMAKE_CURRENT_BINARY_DIR}/LlamaConfigVersion.cmake
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Llama)
-
-set_target_properties(llama PROPERTIES PUBLIC_HEADER ${CMAKE_CURRENT_SOURCE_DIR}/llama.h)
-install(TARGETS llama LIBRARY PUBLIC_HEADER)
+install(FILES LICENSE LICENSE-MIT NOTICE DESTINATION ${CMAKE_INSTALL_DATADIR}/celiums-bitnet)

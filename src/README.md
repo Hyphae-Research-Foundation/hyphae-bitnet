@@ -1,5 +1,9 @@
 # BitNet CPU Inference Optimization
 
+This document is adapted from the Microsoft BitNet upstream documentation.
+Performance images and historical values below are upstream results unless a
+Celiums benchmark is explicitly identified.
+
 This update provides significant performance improvements for BitNet inference on CPU through paralleled kernel implementations, native I2_S GEMM/GEMV support, configurable tiling block size and embedding quantization.
 
 ## Update
@@ -40,10 +44,10 @@ python setup_env.py --quant-embd
 ```
 This automatically converts embeddings to Q6_K format.
 
-**Manual conversion:**
-```bash
-build/bin/llama-quantize --token-embedding-type Q6_K models/BitNet-b1.58-2B-4T/ggml-model-f32.gguf models/BitNet-b1.58-2B-4T/ggml-model-i2_s-embed-q6_k.gguf I2_S 1 1
-```
+I2_S model conversion is performed directly by
+`utils/convert-hf-to-gguf-bitnet.py --outtype i2_s`. The inherited selective
+embedding requantization scripts remain experimental until they no longer rely
+on an unregistered `llama-quantize I2_S` mode.
 
 ## Optimizations
 

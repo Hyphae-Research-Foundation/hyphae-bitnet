@@ -1,5 +1,10 @@
 # BitNet Inference Kernel
 
+This directory contains the inherited Microsoft BitNet GPU prototype. It is
+experimental in Celiums BitNet: the current dispatcher is shape-specific and
+the upstream build targets CUDA compute capability 8.0. It is not part of the
+strict backend guarantee yet.
+
 This repository provides a highly efficient GEMV kernel implementation for the BitNet model, optimized for W2A8 inference — 2-bit weights and 8-bit activations. It is tailored for use with the [BitNet-b1.58-2B-4T](https://arxiv.org/abs/2504.12285) model.
 
 ## Features

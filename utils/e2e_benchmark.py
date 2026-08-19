@@ -1,59 +1,61 @@
-import os
-import sys
-import logging
 import argparse
 import platform
 import subprocess
+import sys
+from pathlib import Path
 
-def run_command(command, shell=False, log_step=None):
-    """Run a system command and ensure it succeeds."""
-    if log_step:
-        log_file = os.path.join(args.log_dir, log_step + ".log")
-        with open(log_file, "w") as f:
-            try:
-                subprocess.run(command, shell=shell, check=True, stdout=f, stderr=f)
-            except subprocess.CalledProcessError as e:
-                logging.error(f"Error occurred while running command: {e}, check details in {log_file}")
-                sys.exit(1)
-    else:
-        try:
-            subprocess.run(command, shell=shell, check=True)
-        except subprocess.CalledProcessError as e:
-            logging.error(f"Error occurred while running command: {e}")
-        sys.exit(1)
 
-def run_benchmark():
-    build_dir =  os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build")
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def benchmark_binary(build_dir):
+    candidates = [build_dir / "bin" / "llama-bench"]
     if platform.system() == "Windows":
-        bench_path = os.path.join(build_dir, "bin", "Release", "llama-bench.exe")
-        if not os.path.exists(bench_path):
-            bench_path = os.path.join(build_dir, "bin", "llama-bench")
-    else:
-        bench_path = os.path.join(build_dir, "bin", "llama-bench")
-    if not os.path.exists(bench_path):
-        logging.error(f"Benchmark binary not found, please build first.")
-        sys.exit(1)
+        candidates.insert(0, build_dir / "bin" / "Release" / "llama-bench.exe")
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError("llama-bench not found")
+
+
+def build_command(args):
     command = [
-        f'{bench_path}',
-        '-m', args.model,
-        '-n', str(args.n_token),
-        '-ngl', '0',
-        '-b', '1',
-        '-t', str(args.threads),
-        '-p', str(args.n_prompt),
-        '-r', '5'
+        str(benchmark_binary(args.build_dir)),
+        "-m", str(args.model),
+        "-p", str(args.n_prompt),
+        "-n", str(args.n_token),
+        "-b", str(args.batch),
+        "-ub", str(args.ubatch),
+        "-t", str(args.threads),
+        "-r", str(args.repetitions),
+        "-o", args.output,
+        "-ngl", "0",
     ]
-    run_command(command)
+    if args.cpu_mask:
+        command.extend(["-C", args.cpu_mask, "--cpu-strict", "1"])
+    return command
+
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Setup the environment for running the inference')
-    parser.add_argument("-m", "--model", type=str, help="Path to model file", required=True)
-    parser.add_argument("-n", "--n-token", type=int, help="Number of generated tokens", required=False, default=128)
-    parser.add_argument("-p", "--n-prompt", type=int, help="Prompt to generate text from", required=False, default=512)
-    parser.add_argument("-t", "--threads", type=int, help="Number of threads to use", required=False, default=2)
-    return parser.parse_args()
+    parser = argparse.ArgumentParser(description="Benchmark Celiums BitNet prefill and decode")
+    parser.add_argument("-m", "--model", type=Path, required=True)
+    parser.add_argument("-n", "--n-token", type=int, default=128)
+    parser.add_argument("-p", "--n-prompt", type=int, default=128)
+    parser.add_argument("-t", "--threads", type=int, default=2)
+    parser.add_argument("-b", "--batch", type=int, default=128)
+    parser.add_argument("-ub", "--ubatch", type=int, default=128)
+    parser.add_argument("-r", "--repetitions", type=int, default=5)
+    parser.add_argument("-o", "--output", choices=["csv", "json", "jsonl", "md", "sql"], default="jsonl")
+    parser.add_argument("--cpu-mask")
+    parser.add_argument("--build-dir", type=Path, default=ROOT / "build")
+    args = parser.parse_args()
+    args.build_dir = args.build_dir.resolve()
+    return args
+
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    args = parse_args()
-    run_benchmark()
+    try:
+        subprocess.run(build_command(parse_args()), cwd=ROOT, check=True)
+    except (OSError, subprocess.CalledProcessError) as error:
+        print(f"Benchmark failed: {error}", file=sys.stderr)
+        sys.exit(1)

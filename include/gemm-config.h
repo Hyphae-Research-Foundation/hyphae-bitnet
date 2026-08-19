@@ -33,3 +33,8 @@
 #endif // __ARM_FEATURE_DOTPROD
 #endif // __AVX__
 
+#ifndef ROW_BLOCK_SIZE
+    #define ROW_BLOCK_SIZE 1
+    #define COL_BLOCK_SIZE 1
+    #define PARALLEL_SIZE 1
+#endif

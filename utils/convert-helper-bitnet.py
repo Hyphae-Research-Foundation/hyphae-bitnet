@@ -6,6 +6,9 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from i2s_format import validate_i2s_gguf
+
+
 def run_command(command_list, cwd=None, check=True):
     print(f"Executing: {' '.join(map(str, command_list))}")
     try:
@@ -15,6 +18,7 @@ def run_command(command_list, cwd=None, check=True):
         print(f"Error executing command: {' '.join(map(str, e.cmd))}")
         print(f"Return code: {e.returncode}")
         raise
+
 
 def main():
     if len(sys.argv) < 2:
@@ -33,16 +37,13 @@ def main():
     project_root_dir = utils_dir.parent
 
     preprocess_script = utils_dir / "preprocess-huggingface-bitnet.py"
-    convert_script = utils_dir / "convert-ms-to-gguf-bitnet.py"
+    convert_script = utils_dir / "convert-hf-to-gguf-bitnet.py"
     
-    llama_quantize_binary = project_root_dir / "build" / "bin" / "llama-quantize"
-
     input_file = model_dir / "model.safetensors"
     input_backup_file = model_dir / "model.safetensors.backup"
     preprocessed_output_file = model_dir / "model.safetensors"
 
-    gguf_f32_output = model_dir / "ggml-model-f32-bitnet.gguf"
-    gguf_i2s_output = model_dir / "ggml-model-i2s-bitnet.gguf"
+    gguf_i2s_output = model_dir / "ggml-model-i2_s.gguf"
 
     if not preprocess_script.is_file():
         print(f"Error: Preprocess script not found at '{preprocess_script}'")
@@ -50,10 +51,6 @@ def main():
     if not convert_script.is_file():
         print(f"Error: Convert script not found at '{convert_script}'")
         sys.exit(1)
-    if not llama_quantize_binary.is_file():
-        print(f"Error: llama-quantize binary not found at '{llama_quantize_binary}'")
-        sys.exit(1)
-
     if not input_file.is_file():
         print(f"Error: Input safetensors file not found at '{input_file}'")
         sys.exit(1)
@@ -74,32 +71,22 @@ def main():
         ]
         run_command(cmd_preprocess)
 
-        print("Converting to GGUF (f32)...")
+        print("Converting directly to GGUF I2_S...")
         cmd_convert = [
             sys.executable,
             str(convert_script),
             str(model_dir),
-            "--vocab-type", "bpe",
-            "--outtype", "f32",
-            "--concurrency", "1",
-            "--outfile", str(gguf_f32_output)
+            "--outtype", "i2_s",
+            "--outfile", str(gguf_i2s_output)
         ]
         run_command(cmd_convert)
-
-        print("Quantizing model to I2_S...")
-        cmd_quantize = [
-            str(llama_quantize_binary),
-            str(gguf_f32_output),
-            str(gguf_i2s_output),
-            "I2_S",
-            "1"
-        ]
-        run_command(cmd_quantize)
+        validate_i2s_gguf(gguf_i2s_output)
 
         print("Convert successfully.")
 
     except Exception as e:
         print(f"An error occurred: {e}")
+        raise
     finally:
         print("Cleaning up intermediate files...")
         if preprocessed_output_file.exists() and preprocessed_output_file != input_backup_file:
