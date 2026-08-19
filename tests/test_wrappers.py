@@ -21,6 +21,7 @@ def load_module(name, path):
 inference = load_module("celiums_run_inference", ROOT / "run_inference.py")
 server = load_module("celiums_run_server", ROOT / "run_inference_server.py")
 benchmark = load_module("celiums_benchmark", ROOT / "utils" / "e2e_benchmark.py")
+logits_capture = load_module("celiums_logits_capture", ROOT / "utils" / "logits_capture.py")
 
 
 class WrapperCommandTests(unittest.TestCase):
@@ -106,6 +107,21 @@ class WrapperCommandTests(unittest.TestCase):
             config.write_text(json.dumps({"architectures": ["LlamaForCausalLM"], "hidden_act": "silu"}))
             with self.assertRaisesRegex(RuntimeError, "Unsupported strict model architecture"):
                 setup.validate_source_model(Path(temp_dir))
+
+    def test_logits_capture_forwards_positions_and_threads(self):
+        args = SimpleNamespace(
+            model=Path("model.gguf"), prompt="prompt", output=Path("capture.gguf"),
+            position=[0, -1], threads=2, threads_batch=8, ctx_size=512,
+            batch_size=128, ubatch_size=64, cpu_mask="0x3",
+            build_dir=ROOT / "build", tensor=["attn_norm-0", "Qcur-0@ROPE"],
+        )
+        with patch.object(logits_capture, "capture_binary", return_value=Path("celiums-logits-capture")):
+            command = logits_capture.build_command(args)
+        self.assertEqual(command[command.index("--threads-batch") + 1], "8")
+        self.assertEqual(len([arg for arg in command if arg.startswith("--capture-position=")]), 2)
+        self.assertIn("--cpu-strict", command)
+        self.assertIn("--cpu-mask-batch", command)
+        self.assertIn("--capture-tensor=Qcur-0@ROPE", command)
 
 
 if __name__ == "__main__":

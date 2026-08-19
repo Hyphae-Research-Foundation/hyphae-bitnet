@@ -1,0 +1,57 @@
+{
+  "schema": "celiums-exactness-oracle-results-v1",
+  "date": "2026-08-19",
+  "model": {
+    "path": "models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf",
+    "sha256": "e23b16fa81b890e8b65e676262b645e8ffa5ae1f6df89dadaf793246826bbd90"
+  },
+  "prompt": "Celiums BitNet exactness oracle.",
+  "positions": [0, 9],
+  "runtime": {
+    "threads": 1,
+    "threads_batch": 1,
+    "ctx_size": 256,
+    "batch_size": 64,
+    "ubatch_size": 64
+  },
+  "captures": {
+    "native_sha256": "4f736a90dbaa6075bcd6fe0ada0a00171edd3acb73794d8105da3932ce92072c",
+    "avx2_no_vnni_sha256": "6dabcb9b91fd65553363549e6e298e803bb7f7c2e2e637481d02b4bd5cb94dd9",
+    "scalar_sha256": "0f118ccec5cfc207bac17dde8292c7441d859db7d1af8515d389d29599be5b46"
+  },
+  "native_vs_avx2_no_vnni": {
+    "bitwise_equal": true,
+    "differing_values": 0,
+    "max_abs_error": 0.0,
+    "nmse": 0.0,
+    "top1_agreement": 1.0
+  },
+  "scalar_vs_native": {
+    "bitwise_equal": false,
+    "differing_values": 240879,
+    "max_abs_error": 0.7866830229759216,
+    "mean_abs_error": 0.07779660645178829,
+    "mse": 0.01697070125745212,
+    "nmse": 0.0033107655403400143,
+    "top1_agreement": 1.0
+  },
+  "first_divergence": {
+    "operation": "ROPE",
+    "attn_norm_bitwise_equal": true,
+    "q_projection_bitwise_equal": true,
+    "k_projection_bitwise_equal": true,
+    "v_projection_bitwise_equal": true,
+    "q_rope_max_abs_error": 4.76837158203125e-7,
+    "k_rope_max_abs_error": 4.76837158203125e-7
+  },
+  "probe_callback": {
+    "final_logits_bitwise_equal_to_callback_free_capture": true
+  },
+  "validation": {
+    "python_tests": 23,
+    "native_targeted_tests": 3,
+    "avx2_no_vnni_targeted_tests": 3,
+    "scalar_targeted_tests": 3,
+    "asan_ubsan_targeted_tests": 3
+  }
+}

@@ -165,7 +165,7 @@ python setup_env.py --build-only --build-server
 ```
 
 The default build includes `llama-bench`, `llama-cli`, `llama-server`, and the
-Celiums I2_S tests.
+Celiums I2_S tests, plus `celiums-logits-capture` for exactness baselines.
 
 ### Download, Build, and Convert
 
@@ -262,6 +262,11 @@ The validation matrix also covers:
 - malformed GGUF dimensions, byte counts, scales, and file types;
 - restricted CPU affinity and hybrid fallback behavior.
 
+Raw full-vocabulary regression baselines are documented in
+[docs/EXACTNESS_ORACLE.md](docs/EXACTNESS_ORACLE.md).
+The fixed Phase 0 result manifest is
+[`docs/exactness-oracle-results-2026-08-19.json`](docs/exactness-oracle-results-2026-08-19.json).
+
 ## Repository Map
 
 ```text
@@ -270,6 +275,7 @@ docs/NUMERICAL_CONTRACT.md          strict I2_S/I8_S semantics
 docs/BENCHMARKING.md                reproducible benchmark rules
 docs/SUPPORTED_HARDWARE.md          validated hardware/backend matrix
 docs/EXPERIMENTAL_ROADMAP.md        non-strict optimization roadmap
+docs/EXACTNESS_ORACLE.md            deterministic raw-logits regression workflow
 docs/performance-audit-2026-08-18.md controlled implementation audit
 setup_env.py                        strict build/download/conversion entry point
 run_inference.py                    CLI inference wrapper

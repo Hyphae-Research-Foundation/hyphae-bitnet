@@ -118,7 +118,7 @@ def configure_and_build(args, arch):
         f"-DBITNET_X86_TL2={'ON' if arch == 'x86_64' and args.quant_type == 'tl2' else 'OFF'}",
     ]
     run_command(configure, args.log_dir / "configure.log")
-    targets = ["llama-bench"]
+    targets = ["llama-bench", "celiums-logits-capture"]
     if args.build_tests:
         targets.extend(["test-quantize-fns", "test-i2s-mul-mat", "test-celiums-hybrid"])
     if args.build_server:

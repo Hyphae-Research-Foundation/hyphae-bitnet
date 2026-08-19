@@ -48,6 +48,9 @@ option(CELIUMS_BITNET_BUILD_SERVER "Build the llama.cpp server" ON)
 set(LLAMA_BUILD_SERVER ${CELIUMS_BITNET_BUILD_SERVER} CACHE BOOL "Build llama.cpp server" FORCE)
 set(LLAMA_TESTS_INSTALL OFF CACHE BOOL "Do not install llama.cpp tests" FORCE)
 add_subdirectory(3rdparty/llama.cpp)
+if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TOOLS)
+    add_subdirectory(tools)
+endif()
 
 # install
 
