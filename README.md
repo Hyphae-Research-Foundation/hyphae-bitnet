@@ -6,7 +6,7 @@
 
 [![License](https://img.shields.io/badge/Celiums%20code-Apache--2.0-blue.svg)](LICENSE)
 [![Upstream](https://img.shields.io/badge/upstream-Microsoft%20BitNet-5C2D91.svg)](UPSTREAM.md)
-[![Version](https://img.shields.io/badge/version-0.1.0-111827.svg)](CHANGES.md)
+[![Version](https://img.shields.io/badge/version-0.2.0-111827.svg)](CHANGES.md)
 [![Status](https://img.shields.io/badge/strict%20I2__S-validated-0F766E.svg)](docs/NUMERICAL_CONTRACT.md)
 
 </div>
@@ -154,9 +154,12 @@ for the recorded environment.
 ### Clone
 
 ```bash
-git clone --recursive https://github.com/celiumsai/celiums-bitnet.git
+git clone https://github.com/celiumsai/celiums-bitnet.git
 cd celiums-bitnet
 ```
+
+The engine is vendored in-tree at `3rdparty/llama.cpp`; there are no longer any
+git submodules, so a plain clone is complete and reproducible.
 
 ### Build Only
 
@@ -255,6 +258,29 @@ python utils/e2e_benchmark.py \
   --repetitions 5 \
   --output jsonl
 ```
+
+### Package a Release
+
+`scripts/package-runtime.sh` builds a profile-specific, relocatable release
+archive plus a provenance manifest:
+
+```bash
+JOBS=8 ./scripts/package-runtime.sh native
+JOBS=8 ./scripts/package-runtime.sh avx2 build-avx2-no-vnni
+JOBS=8 ./scripts/package-runtime.sh scalar build-scalar
+```
+
+Each run configures a Release build with the selected
+`CELIUMS_BITNET_CPU_PROFILE`, installs into `stage-<profile>/`, and produces:
+
+- `celiums-bitnet-runtime-0.2.0-linux-x86_64-<profile>.tar.gz` — a `/usr`
+  payload with the runtime binary, server, bench tool, and headers;
+- a matching `.tar.gz.json` manifest recording the product commit, the vendored
+  engine snapshot, compiler, platform, and artifact hashes.
+
+Packaging fails closed on a dirty tree unless `ALLOW_DIRTY=1` is set. See
+[docs/RUNTIME_PRODUCT.md](docs/RUNTIME_PRODUCT.md) for the product boundary and
+archive layout.
 
 ## Validation
 
