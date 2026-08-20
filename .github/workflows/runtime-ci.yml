@@ -59,13 +59,31 @@ jobs:
             grep -qx "${option}:BOOL=ON" build-avx2/CMakeCache.txt
           done
 
+  gateway:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --manifest-path tools/runtime-gateway/Cargo.toml --all -- --check
+      - run: CARGO_INCREMENTAL=0 cargo check --manifest-path tools/runtime-gateway/Cargo.toml --locked --all-targets
+      - run: CARGO_INCREMENTAL=0 cargo clippy --manifest-path tools/runtime-gateway/Cargo.toml --locked --all-targets -- -D warnings
+      - run: CARGO_INCREMENTAL=0 cargo test --manifest-path tools/runtime-gateway/Cargo.toml --locked --all-targets
+      - run: cargo install cargo-about --locked --features cli --version 0.9.2
+      - run: cd tools/runtime-gateway && cargo about generate --locked about.hbs --output-file /tmp/THIRD_PARTY_LICENSES.raw.html --fail && perl -pe 's/[ \t\r]+$//' /tmp/THIRD_PARTY_LICENSES.raw.html > /tmp/THIRD_PARTY_LICENSES.html && cmp THIRD_PARTY_LICENSES.html /tmp/THIRD_PARTY_LICENSES.html
+
   package:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.1
       - run: ALLOW_DIRTY=1 JOBS=2 ./scripts/package-runtime.sh scalar /tmp/package-build /tmp/package-stage package.tar.gz
       - run: set -o pipefail; tar -tzf package.tar.gz | sort; test -f package.tar.gz.json
       - run: /tmp/package-stage/usr/bin/celiums-bitnet version
+      - run: /tmp/package-stage/usr/bin/celiums-runtime-gateway version
+      - run: test -x /tmp/package-stage/usr/bin/celiums-hyphae-sidecar && test -x /tmp/package-stage/usr/bin/celiums-runtime-mcp
+      - run: test -s /tmp/package-stage/usr/share/celiums-bitnet-runtime/THIRD_PARTY_LICENSES.html && test -s /tmp/package-stage/usr/share/celiums-bitnet-runtime/Cargo.lock
 
   sanitizers:
     runs-on: ubuntu-24.04

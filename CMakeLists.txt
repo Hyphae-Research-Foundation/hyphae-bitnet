@@ -86,6 +86,7 @@ option(BITNET_X86_TL2    "Celiums BitNet: use TL2 on x86"          OFF)
 option(CELIUMS_BITNET_STRICT "Preserve the Celiums BitNet numerical contract" ON)
 option(CELIUMS_BITNET_EXPERIMENTAL "Build experimental kernels" OFF)
 option(CELIUMS_BITNET_BUILD_SERVER "Build the Celiums BitNet server" ON)
+option(CELIUMS_BITNET_BUILD_GATEWAY "Build the optional Rust Hyphae gateway" OFF)
 option(CELIUMS_BITNET_INSTALL_COMPAT "Install llama.cpp compatibility tools and development files" OFF)
 option(CELIUMS_BITNET_VERIFY_ENGINE_TREE "Verify worktree contents against cmake/ENGINE_TREE" OFF)
 set(CELIUMS_BITNET_TEST_MODEL "" CACHE FILEPATH "Strict I2_S model used by integration tests")
@@ -198,6 +199,36 @@ add_subdirectory(3rdparty/llama.cpp)
 add_subdirectory(src)
 add_subdirectory(tools)
 
+if (CELIUMS_BITNET_BUILD_GATEWAY)
+    find_program(CELIUMS_CARGO_EXECUTABLE cargo REQUIRED)
+    set(CELIUMS_GATEWAY_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime-gateway/Cargo.toml")
+    set(CELIUMS_GATEWAY_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/cargo-gateway")
+    file(GLOB_RECURSE CELIUMS_GATEWAY_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime-gateway/src/*.rs")
+    set(CELIUMS_GATEWAY_BINARIES
+        "${CELIUMS_GATEWAY_TARGET_DIR}/release/celiums-runtime-gateway"
+        "${CELIUMS_GATEWAY_TARGET_DIR}/release/celiums-hyphae-sidecar"
+        "${CELIUMS_GATEWAY_TARGET_DIR}/release/celiums-runtime-mcp")
+    add_custom_command(
+        OUTPUT ${CELIUMS_GATEWAY_BINARIES}
+        COMMAND ${CMAKE_COMMAND} -E env
+            CARGO_TARGET_DIR=${CELIUMS_GATEWAY_TARGET_DIR}
+            CARGO_INCREMENTAL=0
+            ${CELIUMS_CARGO_EXECUTABLE} build --manifest-path ${CELIUMS_GATEWAY_MANIFEST}
+                --release --locked --bins
+        DEPENDS
+            ${CELIUMS_GATEWAY_SOURCES}
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime-gateway/Cargo.toml"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime-gateway/Cargo.lock"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime-gateway/rust-toolchain.toml"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime-gateway"
+        COMMENT "Building Celiums Runtime Gateway")
+    add_custom_target(celiums-runtime-gateway-binaries ALL DEPENDS ${CELIUMS_GATEWAY_BINARIES})
+    if (BUILD_SHARED_LIBS)
+        install(PROGRAMS ${CELIUMS_GATEWAY_BINARIES} DESTINATION ${CMAKE_INSTALL_BINDIR})
+    endif()
+endif()
+
 add_dependencies(celiums-runtime-bench celiums-bitnet-runtime)
 
 add_executable(celiums-bitnet app/celiums-bitnet.cpp)
@@ -286,6 +317,12 @@ install(EXPORT CeliumsBitNetRuntimeTargets
 install(FILES LICENSE LICENSE-MIT LICENSE-BSD-3-Clause NOTICE
     3rdparty/llama.cpp/NOTICE-CELIUMS
     DESTINATION ${CMAKE_INSTALL_DATADIR}/celiums-bitnet-runtime)
+if (CELIUMS_BITNET_BUILD_GATEWAY)
+    install(FILES LICENSE-HYPHAE-APACHE-2.0 NOTICE-HYPHAE NOTICE-RUST-DEPENDENCIES
+        tools/runtime-gateway/Cargo.lock
+        tools/runtime-gateway/THIRD_PARTY_LICENSES.html
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/celiums-bitnet-runtime)
+endif()
 install(FILES 3rdparty/llama.cpp/LICENSE
     DESTINATION ${CMAKE_INSTALL_DATADIR}/celiums-bitnet-runtime
     RENAME LICENSE-LLAMA-MIT)

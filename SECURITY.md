@@ -32,3 +32,13 @@ Center.
 - Treat model and adapter files as untrusted input.
 - Pin model revisions and verify checksums in production.
 - Run inference services with the least privileges they require.
+- Keep `celiums-runtime-gateway`, BitNet, and embedding upstreams on loopback.
+  Use gateway bearer authentication on any non-loopback bind.
+- Create the Hyphae data directory with `celiums-runtime-gateway init`. Keep the
+  Owner key offline and run the gateway with its separate Writer key.
+- Place the Hyphae UDS in a `0700` directory. Protect proof witnesses like
+  backups because they may contain the complete retained authority.
+- Treat retrieved records as untrusted input. The gateway delimits records, but
+  high-impact tools still require independent authorization.
+- See [docs/GATEWAY_THREAT_MODEL.md](docs/GATEWAY_THREAT_MODEL.md) for trust
+  boundaries, non-claims, failure handling, and resource controls.

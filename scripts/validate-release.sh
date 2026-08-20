@@ -14,6 +14,14 @@ if [[ -z "$cmake" ]]; then
   printf 'cmake is required (or set CMAKE)\n' >&2
   exit 2
 fi
+if ! command -v cargo >/dev/null 2>&1 || ! command -v cargo-about >/dev/null 2>&1; then
+  printf 'cargo and cargo-about 0.9.2 are required for the Celiums Runtime Gateway release gate\n' >&2
+  exit 2
+fi
+if [[ $(cd tools/runtime-gateway && rustc --version | cut -d' ' -f2) != 1.97.1 || $(cargo-about --version | cut -d' ' -f2) != 0.9.2 ]]; then
+  printf 'Rust 1.97.1 and cargo-about 0.9.2 are required for the release gate\n' >&2
+  exit 2
+fi
 if [[ "$release_root" == / || "$release_root" == "$root" ]]; then
   printf 'BUILD_ROOT must not be the filesystem or repository root\n' >&2
   exit 2
@@ -43,6 +51,7 @@ for profile in native avx2 scalar; do
     -DLLAMA_BUILD_UI=OFF \
     -DLLAMA_USE_PREBUILT_UI=OFF \
     -DCELIUMS_BITNET_BUILD_SERVER=ON \
+    -DCELIUMS_BITNET_BUILD_GATEWAY=ON \
     -DCELIUMS_BITNET_CPU_PROFILE="$profile" \
     -DCELIUMS_BITNET_TEST_MODEL="$model" \
     -DCELIUMS_BITNET_INSTALL_COMPAT=OFF \
@@ -50,6 +59,7 @@ for profile in native avx2 scalar; do
     -DCMAKE_INSTALL_PREFIX="$install"
   "$cmake" --build "$build" --parallel "$jobs" --target \
     celiums-bitnet celiums-runtime-bench celiums-runtime-server \
+    celiums-runtime-gateway-binaries \
     celiums-logits-capture test-celiums-runtime-api test-celiums-runtime-session \
     test-quantize-fns test-i2s-mul-mat test-celiums-hybrid
   "${CTEST:-${cmake%/cmake}/ctest}" --test-dir "$build" --output-on-failure --no-tests=error \
@@ -59,6 +69,16 @@ for profile in native avx2 scalar; do
   CELIUMS_BITNET_TEST_INSTALL_PREFIX="$install" \
   python -m unittest tests.test_runtime_product -v
 done
+
+(
+  cd tools/runtime-gateway
+  CARGO_INCREMENTAL=0 cargo fmt --all -- --check
+  CARGO_INCREMENTAL=0 cargo clippy --locked --all-targets -- -D warnings
+  CARGO_INCREMENTAL=0 cargo test --locked --all-targets
+  cargo about generate --locked about.hbs --output-file "$release_root/THIRD_PARTY_LICENSES.raw.html" --fail
+  perl -pe 's/[ \t\r]+$//' "$release_root/THIRD_PARTY_LICENSES.raw.html" > "$release_root/THIRD_PARTY_LICENSES.html"
+  cmp THIRD_PARTY_LICENSES.html "$release_root/THIRD_PARTY_LICENSES.html"
+)
 
 python -m unittest \
   tests.test_i2s_conversion tests.test_logits_comparison tests.test_wrappers -v

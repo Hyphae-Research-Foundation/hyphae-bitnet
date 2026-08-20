@@ -13,6 +13,10 @@ if [[ -z "$python" ]]; then
   printf 'python3 is required (or set PYTHON)\n' >&2
   exit 2
 fi
+if [[ $(cd tools/runtime-gateway && rustc --version | cut -d' ' -f2) != 1.97.1 ]]; then
+  printf 'Rust 1.97.1 is required for gateway release packaging\n' >&2
+  exit 2
+fi
 
 profile=${1:-native}
 build_dir=${2:-build-${profile}}
@@ -68,6 +72,7 @@ source_date_epoch=${SOURCE_DATE_EPOCH:-$(git show -s --format=%ct HEAD)}
   -DLLAMA_BUILD_UI=OFF \
   -DLLAMA_USE_PREBUILT_UI=OFF \
   -DCELIUMS_BITNET_BUILD_SERVER=ON \
+  -DCELIUMS_BITNET_BUILD_GATEWAY=ON \
   -DCELIUMS_BITNET_CPU_PROFILE="$profile" \
   -DCELIUMS_BITNET_INSTALL_COMPAT=OFF \
   -DCELIUMS_BITNET_VERIFY_ENGINE_TREE=OFF \
@@ -75,7 +80,7 @@ source_date_epoch=${SOURCE_DATE_EPOCH:-$(git show -s --format=%ct HEAD)}
 
 "$cmake" --build "$build_dir" --parallel "${JOBS:-2}" --target \
   celiums-bitnet celiums-runtime-bench celiums-runtime-server \
-  test-celiums-runtime-api test-celiums-runtime-session
+  celiums-runtime-gateway-binaries test-celiums-runtime-api test-celiums-runtime-session
 
 rm -rf "$stage_dir"
 DESTDIR="$stage_dir" "$cmake" --install "$build_dir"
@@ -89,6 +94,9 @@ manifest_command=(
   "$python" utils/release_manifest.py
   --profile "$profile"
   --compiler "$(sed -n 's/^CMAKE_C_COMPILER:FILEPATH=//p' "$build_dir/CMakeCache.txt")"
+  --rustc "$(cd tools/runtime-gateway && rustc --version)"
+  --cargo-lock tools/runtime-gateway/Cargo.lock
+  --hyphae-commit 0471ae25b263fd506da1578068ec57429a6783de
   --artifact "$archive"
   --output "${archive}.json"
 )

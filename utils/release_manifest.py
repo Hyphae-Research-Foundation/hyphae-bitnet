@@ -29,6 +29,9 @@ def parse_args():
     parser.add_argument("--profile", choices=("native", "avx2", "scalar"), required=True)
     parser.add_argument("--build-type", default="Release")
     parser.add_argument("--compiler", required=True)
+    parser.add_argument("--rustc")
+    parser.add_argument("--cargo-lock", type=Path)
+    parser.add_argument("--hyphae-commit")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--model", type=Path)
     parser.add_argument("--artifact", type=Path, action="append", default=[])
@@ -84,6 +87,9 @@ def main():
         "profile": args.profile,
         "build_type": args.build_type,
         "compiler": args.compiler,
+        "rustc": args.rustc,
+        "cargo_lock_sha256": sha256_file(args.cargo_lock) if args.cargo_lock else None,
+        "hyphae_commit": args.hyphae_commit,
         "platform": platform.platform(),
         "machine": platform.machine(),
         "artifacts": [],

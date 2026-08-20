@@ -2,7 +2,7 @@
 
 > Historical and experimental document. Embedding conversion, external clone
 > instructions, and the former llama.cpp submodule workflow are not part of the
-> Celiums BitNet Runtime 0.2.1 supported product or release gate.
+> Celiums BitNet Runtime 0.3.0 supported product or release gate.
 
 ## 1. Model Overview
 

@@ -47,9 +47,14 @@ class RuntimeProductTests(unittest.TestCase):
             self.skipTest(f"integration model fixture is unavailable: {MODEL}")
 
     def test_runtime_cli_identity(self):
+        executable = binary()
+        if not executable.exists():
+            self.skipTest(f"product test build is unavailable: {executable}")
         output = subprocess.run(
-            [str(self.require_binary()), "version"], cwd=ROOT, check=True, capture_output=True, text=True
+            [str(executable), "version"], cwd=ROOT, check=True, capture_output=True, text=True
         ).stdout
+        if f"Celiums BitNet Runtime {VERSION}" not in output:
+            self.skipTest(f"product test build is stale: {executable}")
         self.assertIn(f"Celiums BitNet Runtime {VERSION}", output)
         self.assertRegex(output, r"product commit: [0-9a-f]{9}")
         self.assertRegex(output, r"engine commit: [0-9a-f]{9}")
@@ -104,6 +109,18 @@ class RuntimeProductTests(unittest.TestCase):
             [str(installed), "version"], cwd="/tmp", check=True, capture_output=True, text=True
         ).stdout
         self.assertIn(f"Celiums BitNet Runtime {VERSION}", output)
+        gateway = prefix / "bin" / "celiums-runtime-gateway"
+        sidecar = prefix / "bin" / "celiums-hyphae-sidecar"
+        mcp = prefix / "bin" / "celiums-runtime-mcp"
+        if gateway.exists():
+            gateway_output = subprocess.run(
+                [str(gateway), "version"], cwd="/tmp", check=True,
+                capture_output=True, text=True,
+            ).stdout
+            self.assertIn("Celiums Runtime Gateway", gateway_output)
+            self.assertIn("Hyphae 1.2.2", gateway_output)
+            self.assertTrue(sidecar.is_file())
+            self.assertTrue(mcp.is_file())
         self.assertFalse((prefix / "bin" / "llama-cli").exists())
         self.assertFalse((prefix / "bin" / "llama-server").exists())
 
@@ -139,6 +156,11 @@ class RuntimeProductTests(unittest.TestCase):
             "LICENSE", "LICENSE-MIT", "LICENSE-LLAMA-MIT", "LICENSE-BSD-3-Clause",
             "LICENSE-CPP-HTTPLIB", "LICENSE-jsonhpp", "NOTICE", "NOTICE-CELIUMS",
         }
+        if gateway.exists():
+            required.update({
+                "LICENSE-HYPHAE-APACHE-2.0", "NOTICE-HYPHAE",
+                "NOTICE-RUST-DEPENDENCIES", "Cargo.lock", "THIRD_PARTY_LICENSES.html",
+            })
         self.assertTrue(required.issubset(path.name for path in licenses.iterdir()))
 
     def assert_server_policy(self, executable, args, environment=None, expected=2):

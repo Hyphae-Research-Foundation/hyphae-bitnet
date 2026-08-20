@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 - 2026-08-20
+
+- Added the optional Celiums Runtime Gateway with authenticated Hyphae UDS,
+  OpenAI-compatible BitNet proxying, bounded local RAG, memory, BM25, exact/ANN
+  vectors, hybrid retrieval, streaming, idempotent request state, and semantic
+  cache.
+- Added proof-bearing retrieval, durable generation receipts, offline semantic
+  proof verification, and model/retrieval/generation provenance.
+- Added dataset, artifact, lineage, run, evaluation, contamination, and
+  hard-negative registry surfaces for CTT-1 development.
+- Added a separate MCP stdio adapter, least-privilege Hyphae bootstrap, threat
+  model, CMake opt-in, release packaging, Rust CI, and native end-to-end tests.
+
 ## 0.2.1 - 2026-08-20
 
 - Completed the single-repository migration with an exact vendored engine tree

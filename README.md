@@ -6,7 +6,7 @@
 
 [![License](https://img.shields.io/badge/Celiums%20code-Apache--2.0-blue.svg)](LICENSE)
 [![Upstream](https://img.shields.io/badge/upstream-Microsoft%20BitNet-5C2D91.svg)](UPSTREAM.md)
-[![Version](https://img.shields.io/badge/version-0.2.1-111827.svg)](CHANGES.md)
+[![Version](https://img.shields.io/badge/version-0.3.0-111827.svg)](CHANGES.md)
 [![Status](https://img.shields.io/badge/strict%20I2__S-validated-0F766E.svg)](docs/NUMERICAL_CONTRACT.md)
 
 </div>
@@ -149,6 +149,7 @@ for the recorded environment.
 - CMake 3.22 or newer
 - A C/C++ compiler with C++17 support
 - Git
+- Rust 1.97.1 when building the optional Hyphae gateway
 - Python packages from `requirements.txt` for model conversion
 
 ### Clone
@@ -184,6 +185,12 @@ build/bin/celiums-bitnet run --model models/BitNet-b1.58-2B-4T/ggml-model-i2_s.g
 
 See [docs/RUNTIME_PRODUCT.md](docs/RUNTIME_PRODUCT.md) for the product boundary,
 experimental C API, installation layout, and compatibility policy.
+
+The optional [Celiums Local AI Gateway](docs/LOCAL_AI_GATEWAY.md) adds local RAG,
+persistent memory, receipts, training/evaluation lineage, semantic cache, and
+offline-verifiable Hyphae retrieval without coupling storage to GGML. Build it
+with `CELIUMS_BITNET_BUILD_GATEWAY=ON`; release archives include the gateway,
+authenticated Hyphae sidecar, and separate MCP adapter.
 
 The runtime C API now includes opaque Session and Request handles,
 tokenization, prefill/decode, copied logits, generation, streaming callbacks,
@@ -264,7 +271,7 @@ the closed portable profiles. Each run configures a shared
 Release build with the selected
 `CELIUMS_BITNET_CPU_PROFILE`, installs into `stage-<profile>/`, and produces:
 
-- `celiums-bitnet-runtime-0.2.1-linux-x86_64-<profile>.tar.gz` - a `/usr`
+- `celiums-bitnet-runtime-0.3.0-linux-x86_64-<profile>.tar.gz` - a `/usr`
   payload with the unified `celiums-bitnet` command, its `run`, `serve`,
   `bench`, `validate`, and `version` subcommands, the C SDK, and private runtime
   libraries;
