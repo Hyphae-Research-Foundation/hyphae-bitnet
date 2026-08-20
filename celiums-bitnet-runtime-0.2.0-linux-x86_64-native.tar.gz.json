@@ -1,0 +1,20 @@
+{
+  "schema": "celiums-bitnet-runtime-build-v1",
+  "product_version": "0.2.0",
+  "api_version": 1,
+  "product_commit": "b6e8b7387d897c49eaa1c3cd28a2df1e1146cf81",
+  "engine_commit": "e1002b8bedcd14bcdcc88fe480a1e98d5fa9eeb7",
+  "source_dirty": false,
+  "profile": "native",
+  "build_type": "Release",
+  "compiler": "cc (GCC) 16.1.1 20260515 (Red Hat 16.1.1-2)",
+  "platform": "Linux-7.1.8-200.fc44.x86_64-x86_64-with-glibc2.43",
+  "machine": "x86_64",
+  "artifacts": [
+    {
+      "path": "/home/mario/Documents/bitnet/celiums-bitnet-runtime-0.2.0-linux-x86_64-native.tar.gz",
+      "size": 4880009,
+      "sha256": "3b5947e97438aefb110fb66ab7e47325ac3f7c015a4ad2d388562312cd28e77d"
+    }
+  ]
+}
