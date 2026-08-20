@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.2.0 - 2026-08-19
+
+- Added the Celiums BitNet Runtime product layer: `celiums-bitnet`
+  with `run`, `serve`, `bench`, `validate`, and `version` commands
+  built on the experimental v1 C API.
+- Added the native C API surface: Runtime, Model, Session, and
+  Request handles; tokenization and detokenization; prefill and
+  single-token decode; copied logits; sampling; synchronous
+  generation; streaming callbacks; stop sequences; chat template
+  application; and cooperative, thread-safe cancellation.
+- Added the native HTTP server with OpenAI-compatible
+  `/v1/completions` and `/v1/chat/completions`, SSE streaming for
+  `stream=true` with the `data: [DONE]` terminator, model chat
+  template rendering through the engine Jinja path, Prometheus
+  metrics at `/metrics`, and generation cancellation when a
+  streaming client disconnects.
+- Added loopback-only binding by default; remote hosts require an
+  API key or an explicit unauthenticated-remote opt-in.
+- Added `CELIUMS_BITNET_BUILD_SERVER` to omit the server and made
+  strict mode the only accepted build policy.
+- Added native, AVX2 (no AVX-VNNI), scalar, and ASan/UBSan CI
+  validation for the runtime tests.
+- Added the exactness oracle: deterministic full-vocabulary logits
+  captures with prompt positions and named-tensor probes, recording
+  model, binary, prompt, and build metadata with SHA-256 hashes.
+  Native AVX-VNNI and AVX2-without-VNNI captures were bitwise
+  identical on the fixed oracle prompt.
+- Added the runtime logits comparator, which verifies the runtime
+  C API against a final-position logits capture bitwise.
+- Added `scripts/package-runtime.sh` and `utils/release_manifest.py`
+  for profile-specific release archives with product/engine commit,
+  compiler, and artifact-hash manifest entries.
+- Kept the `llama-*` compatibility tools available behind
+  `CELIUMS_BITNET_INSTALL_COMPAT=ON`.
+
 ## 0.1.0 - 2026-08-18
 
 - Established the independent Celiums BitNet fork.

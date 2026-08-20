@@ -8,6 +8,7 @@ archive=${4:-celiums-bitnet-runtime-0.2.0-linux-x86_64-${profile}.tar.gz}
 
 cmake -S . -B "$build_dir" \
   -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_SHARED_LIBS=ON \
   -DLLAMA_BUILD_COMMON=ON \
   -DLLAMA_BUILD_TOOLS=ON \
   -DLLAMA_BUILD_TESTS=ON \
@@ -18,7 +19,7 @@ cmake -S . -B "$build_dir" \
   -DCMAKE_INSTALL_PREFIX=/usr
 
 cmake --build "$build_dir" --parallel "${JOBS:-2}" --target \
-  celiums-bitnet celiums-runtime-bench celiums-runtime-server \
+  celiums-bitnet celiums-runtime-bench \
   test-celiums-runtime-api test-celiums-runtime-session
 
 rm -rf "$stage_dir"
