@@ -76,6 +76,31 @@ The comparator verifies token IDs, capture positions, tensor shapes, and finite
 values. It reports differing F32 bit patterns, max and mean absolute error, MSE,
 NMSE, and top-1 agreement.
 
+## Runtime Validation
+
+```bash
+python utils/logits_capture.py \
+  --model models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf \
+  --prompt "Celiums BitNet exactness oracle." \
+  --position -1 \
+  --threads 1 \
+  --build-dir build-runtime \
+  --output captures/runtime-reference.gguf
+
+python utils/compare_runtime_logits.py \
+  --library build-runtime/src/libceliums-bitnet-runtime.so \
+  --model models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf \
+  --reference captures/runtime-reference.gguf \
+  --require-bitwise
+```
+
+The runtime prefill materializes logits for a single output row (the final
+prompt token), so the runtime reference must capture only the final prompt
+position. Capturing extra positions changes the number of requested outputs,
+which perturbs flash-attention scheduling and produces ULP-level differences
+even against the same build. With a final-position-only reference the runtime
+matches the engine bitwise.
+
 ## Promotion Policy
 
 Transparent strict optimizations must produce zero differing F32 bits against

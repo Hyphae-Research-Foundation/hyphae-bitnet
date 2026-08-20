@@ -12,6 +12,7 @@ sys.path.insert(0, str(GGUF_PY))
 
 import gguf
 from utils.compare_logits import compare, load_capture
+from utils.compare_runtime_logits import final_reference_row
 
 
 def write_capture(
@@ -70,6 +71,21 @@ def write_capture(
 
 
 class LogitsComparisonTests(unittest.TestCase):
+    def test_runtime_reference_selects_final_prompt_position(self):
+        tokens = np.array([10, 11, 12], dtype=np.int32)
+        positions = np.array([0, 2], dtype=np.int32)
+        logits = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+        position, row = final_reference_row(tokens, positions, logits)
+        self.assertEqual(position, 2)
+        np.testing.assert_array_equal(row, logits[1])
+
+    def test_runtime_reference_requires_final_prompt_position(self):
+        tokens = np.array([10, 11, 12], dtype=np.int32)
+        positions = np.array([0], dtype=np.int32)
+        logits = np.array([[1.0, 2.0]], dtype=np.float32)
+        with self.assertRaisesRegex(ValueError, "final prompt position 2"):
+            final_reference_row(tokens, positions, logits)
+
     def test_identical_capture_is_bitwise_equal(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "capture.gguf"
