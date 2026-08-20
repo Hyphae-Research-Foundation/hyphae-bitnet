@@ -24,7 +24,7 @@ This update provides significant performance improvements for BitNet inference o
 
 ### Configuration Options
 
-The `include/gemm-config.h` file controls kernel behavior:
+The engine's `ggml/src/ggml-cpu/gemm-config.h` file controls kernel behavior:
 
 ```c
 #define ROW_BLOCK_SIZE 4
@@ -32,7 +32,7 @@ The `include/gemm-config.h` file controls kernel behavior:
 #define PARALLEL_SIZE 4
 ```
 
-Modify these values based on your CPU cache size and architecture for optimal performance. Users can fine-tune performance on their machine through `include/gemm-config.h`.
+Modify these values based on your CPU cache size and architecture for optimal performance. Users can fine-tune performance in the pinned engine source.
 
 ### Enabling Embedding Quantization
 
@@ -200,7 +200,7 @@ Comparison of optimized parallel kernels vs. original implementation:
 
 - `src/ggml-bitnet-mad.cpp`: Parallel kernel implementations
 - `3rdparty/llama.cpp/ggml/src/ggml.c`: GEMM/GEMV integration
-- `include/gemm-config.h`: Configuration file
+- `3rdparty/llama.cpp/ggml/src/ggml-cpu/gemm-config.h`: Configuration file
 
 ### Supported Architectures
 

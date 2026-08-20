@@ -32,11 +32,11 @@ def build_command(args):
         "-ub", str(args.ubatch),
         "-t", str(args.threads),
         "-r", str(args.repetitions),
-        "-o", args.output,
-        "-ngl", "0",
     ]
+    if args.output != "jsonl":
+        raise ValueError("The native runtime benchmark currently supports only jsonl output")
     if args.cpu_mask:
-        command.extend(["-C", args.cpu_mask, "--cpu-strict", "1"])
+        raise ValueError("CPU masks are not yet available in the native runtime benchmark")
     return command
 
 
@@ -60,6 +60,6 @@ def parse_args():
 if __name__ == "__main__":
     try:
         subprocess.run(build_command(parse_args()), cwd=ROOT, check=True)
-    except (OSError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"Benchmark failed: {error}", file=sys.stderr)
         sys.exit(1)

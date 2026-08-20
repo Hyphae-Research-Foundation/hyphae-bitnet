@@ -3,13 +3,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
-int llama_cli(int argc, char ** argv);
-int llama_bench(int argc, char ** argv);
+int celiums_runtime_bench(int argc, char ** argv);
 #ifdef CELIUMS_BITNET_RUNTIME_SERVER
-int llama_server(int argc, char ** argv);
+int celiums_runtime_server(int argc, char ** argv);
 #endif
 
 namespace {
@@ -35,6 +36,155 @@ int print_version() {
     return 0;
 }
 
+struct run_options {
+    const char * model = nullptr;
+    const char * prompt = nullptr;
+    int32_t max_tokens = 128;
+    int32_t context_size = 2048;
+    int32_t batch_size = 512;
+    int32_t ubatch_size = 512;
+    int32_t threads = 2;
+    int32_t threads_batch = 2;
+    int32_t top_k = 40;
+    float top_p = 0.95f;
+    float temperature = 0.8f;
+    uint32_t seed = UINT32_MAX;
+    std::vector<const char *> stop_sequences;
+};
+
+void print_run_help(const char * program) {
+    printf("Usage: %s --model MODEL.gguf --prompt TEXT [options]\n", program);
+    printf("  -n, --n-predict N        maximum generated tokens\n");
+    printf("  -c, --ctx-size N         context size\n");
+    printf("  -b, --batch-size N       logical batch size\n");
+    printf("  -ub, --ubatch-size N     physical batch size\n");
+    printf("  -t, --threads N          decode threads\n");
+    printf("  -tb, --threads-batch N   prefill threads\n");
+    printf("  --temp N                 temperature; 0 uses greedy sampling\n");
+    printf("  --top-k N                top-k sampling\n");
+    printf("  --top-p N                nucleus sampling\n");
+    printf("  --seed N                 sampling seed\n");
+    printf("  --stop TEXT              repeatable stop sequence\n");
+}
+
+int parse_int(const char * value) {
+    size_t parsed = 0;
+    const int result = std::stoi(value, &parsed);
+    if (value[parsed] != '\0') {
+        throw std::invalid_argument("invalid integer");
+    }
+    return result;
+}
+
+float parse_float(const char * value) {
+    size_t parsed = 0;
+    const float result = std::stof(value, &parsed);
+    if (value[parsed] != '\0') {
+        throw std::invalid_argument("invalid number");
+    }
+    return result;
+}
+
+bool stream_stdout(celiums_bitnet_token, const char * piece, size_t piece_size, void *) {
+    if (piece_size > 0) {
+        fwrite(piece, 1, piece_size, stdout);
+        fflush(stdout);
+    }
+    return true;
+}
+
+int run_inference(int argc, char ** argv) {
+    run_options options;
+    try {
+        for (int index = 1; index < argc; ++index) {
+            const std::string argument = argv[index];
+            if ((argument == "--help" || argument == "-h")) {
+                print_run_help(argv[0]);
+                return 0;
+            }
+            if (index + 1 >= argc) {
+                fprintf(stderr, "celiums-bitnet run: argument '%s' requires a value\n", argument.c_str());
+                return 2;
+            }
+            const char * value = argv[++index];
+            if (argument == "--model" || argument == "-m") options.model = value;
+            else if (argument == "--prompt" || argument == "-p") options.prompt = value;
+            else if (argument == "--n-predict" || argument == "-n") options.max_tokens = parse_int(value);
+            else if (argument == "--ctx-size" || argument == "-c") options.context_size = parse_int(value);
+            else if (argument == "--batch-size" || argument == "-b") options.batch_size = parse_int(value);
+            else if (argument == "--ubatch-size" || argument == "-ub") options.ubatch_size = parse_int(value);
+            else if (argument == "--threads" || argument == "-t") options.threads = parse_int(value);
+            else if (argument == "--threads-batch" || argument == "-tb") options.threads_batch = parse_int(value);
+            else if (argument == "--temp" || argument == "--temperature") options.temperature = parse_float(value);
+            else if (argument == "--top-k") options.top_k = parse_int(value);
+            else if (argument == "--top-p") options.top_p = parse_float(value);
+            else if (argument == "--seed") options.seed = (uint32_t) std::stoul(value);
+            else if (argument == "--stop") options.stop_sequences.push_back(value);
+            else {
+                fprintf(stderr, "celiums-bitnet run: unknown argument '%s'\n", argument.c_str());
+                return 2;
+            }
+        }
+    } catch (const std::exception & error) {
+        fprintf(stderr, "celiums-bitnet run: %s\n", error.what());
+        return 2;
+    }
+    if (!options.model || !options.prompt) {
+        fprintf(stderr, "celiums-bitnet run: --model and --prompt are required\n");
+        return 2;
+    }
+
+    celiums_bitnet_runtime * runtime = nullptr;
+    celiums_bitnet_model * model = nullptr;
+    celiums_bitnet_session * session = nullptr;
+    celiums_bitnet_request * request = nullptr;
+    celiums_bitnet_status status;
+
+    celiums_bitnet_runtime_options runtime_options = celiums_bitnet_runtime_default_options();
+    status = celiums_bitnet_runtime_create(&runtime_options, &runtime);
+    if (status == CELIUMS_BITNET_STATUS_OK) {
+        celiums_bitnet_model_options model_options = celiums_bitnet_model_default_options();
+        status = celiums_bitnet_model_load(runtime, options.model, &model_options, &model);
+    }
+    if (status == CELIUMS_BITNET_STATUS_OK) {
+        celiums_bitnet_session_options session_options = celiums_bitnet_session_default_options();
+        session_options.context_size = options.context_size;
+        session_options.batch_size = options.batch_size;
+        session_options.ubatch_size = options.ubatch_size;
+        session_options.threads = options.threads;
+        session_options.threads_batch = options.threads_batch;
+        status = celiums_bitnet_session_create(model, &session_options, &session);
+    }
+    if (status == CELIUMS_BITNET_STATUS_OK) {
+        status = celiums_bitnet_request_create(session, &request);
+    }
+
+    celiums_bitnet_generation_result result = {};
+    result.struct_size = sizeof(result);
+    result.api_version = CELIUMS_BITNET_API_VERSION;
+    if (status == CELIUMS_BITNET_STATUS_OK) {
+        celiums_bitnet_generation_options generation = celiums_bitnet_generation_default_options();
+        generation.max_tokens = options.max_tokens;
+        generation.temperature = options.temperature;
+        generation.top_k = options.top_k;
+        generation.top_p = options.top_p;
+        generation.seed = options.seed;
+        generation.stop_sequences = options.stop_sequences.data();
+        generation.stop_sequence_count = options.stop_sequences.size();
+        status = celiums_bitnet_generate(
+            request, options.prompt, &generation, stream_stdout, nullptr, &result);
+    }
+    printf("\n");
+    if (status != CELIUMS_BITNET_STATUS_OK) {
+        fprintf(stderr, "celiums-bitnet run: %s\n", celiums_bitnet_status_string(status));
+    }
+    celiums_bitnet_request_destroy(request);
+    celiums_bitnet_session_destroy(session);
+    celiums_bitnet_model_destroy(model);
+    celiums_bitnet_runtime_destroy(runtime);
+    return status == CELIUMS_BITNET_STATUS_OK ? 0 : 1;
+}
+
 bool is_loopback_host(const std::string & host) {
     return host == "localhost" || host == "::1" || host.rfind("127.", 0) == 0;
 }
@@ -53,13 +203,61 @@ int serve(int argc, char ** argv) {
             allow_unauthenticated_remote = true;
             continue;
         }
+        if (argument == "--api-key-file") {
+            if (index + 1 >= argc) {
+                fprintf(stderr, "celiums-bitnet serve: --api-key-file requires a path\n");
+                return 2;
+            }
+            const char * path = argv[++index];
+            FILE * file = fopen(path, "rb");
+            if (!file) {
+                fprintf(stderr, "celiums-bitnet serve: failed to open API key file '%s'\n", path);
+                return 2;
+            }
+            char key[1024];
+            const size_t size = fread(key, 1, sizeof(key) - 1, file);
+            fclose(file);
+            key[size] = '\0';
+            std::string value(key);
+            while (!value.empty() && (value.back() == '\n' || value.back() == '\r')) value.pop_back();
+            if (value.empty()) {
+                fprintf(stderr, "celiums-bitnet serve: API key file is empty\n");
+                return 2;
+            }
+#ifdef _WIN32
+            _putenv_s("CELIUMS_BITNET_API_KEY", value.c_str());
+#else
+            setenv("CELIUMS_BITNET_API_KEY", value.c_str(), 1);
+#endif
+            authenticated = true;
+            continue;
+        }
         if (argument == "--host" && index + 1 < argc) {
             host = argv[index + 1];
         } else if (argument.rfind("--host=", 0) == 0) {
             host = argument.substr(strlen("--host="));
-        } else if (argument == "--api-key" || argument == "--api-key-file" ||
-                argument.rfind("--api-key=", 0) == 0 || argument.rfind("--api-key-file=", 0) == 0) {
+        } else if (argument == "--api-key") {
+            if (index + 1 >= argc) {
+                fprintf(stderr, "celiums-bitnet serve: --api-key requires a value\n");
+                return 2;
+            }
+            const char * value = argv[++index];
+#ifdef _WIN32
+            _putenv_s("CELIUMS_BITNET_API_KEY", value);
+#else
+            setenv("CELIUMS_BITNET_API_KEY", value, 1);
+#endif
             authenticated = true;
+            continue;
+        } else if (argument.rfind("--api-key=", 0) == 0) {
+            const std::string value = argument.substr(strlen("--api-key="));
+#ifdef _WIN32
+            _putenv_s("CELIUMS_BITNET_API_KEY", value.c_str());
+#else
+            setenv("CELIUMS_BITNET_API_KEY", value.c_str(), 1);
+#endif
+            authenticated = !value.empty();
+            continue;
         }
         forwarded.push_back(argv[index]);
     }
@@ -72,7 +270,7 @@ int serve(int argc, char ** argv) {
         return 2;
     }
 #ifdef CELIUMS_BITNET_RUNTIME_SERVER
-    return llama_server((int) forwarded.size(), forwarded.data());
+    return celiums_runtime_server((int) forwarded.size(), forwarded.data());
 #else
     fprintf(stderr, "celiums-bitnet: server support was not built\n");
     return 1;
@@ -135,10 +333,10 @@ int main(int argc, char ** argv) {
         return print_version();
     }
     if (strcmp(argv[1], "run") == 0) {
-        return llama_cli(argc - 1, argv + 1);
+        return run_inference(argc - 1, argv + 1);
     }
     if (strcmp(argv[1], "bench") == 0) {
-        return llama_bench(argc - 1, argv + 1);
+        return celiums_runtime_bench(argc - 1, argv + 1);
     }
     if (strcmp(argv[1], "validate") == 0) {
         return validate_model(argc - 1, argv + 1);

@@ -32,16 +32,11 @@ def build_command(args):
         "-t", str(args.threads),
         "-tb", str(threads_batch),
         "-p", args.prompt,
-        "-ngl", "0",
         "-c", str(args.ctx_size),
         "--temp", str(args.temperature),
     ]
-    if args.cpu_mask:
-        command.extend(["-C", args.cpu_mask, "--cpu-strict", "1"])
-    elif args.hybrid_auto:
-        command.append("--celiums-hybrid-auto")
-    if args.conversation:
-        command.append("-cnv")
+    if args.cpu_mask or args.hybrid_auto or args.conversation:
+        raise ValueError("CPU masks, hybrid-auto, and conversation mode are not yet available in the native run command")
     return command
 
 
@@ -68,6 +63,6 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
     try:
         subprocess.run(build_command(parse_args()), cwd=ROOT, check=True)
-    except (OSError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"Inference failed: {error}", file=sys.stderr)
         sys.exit(1)

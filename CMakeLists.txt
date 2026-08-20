@@ -100,21 +100,22 @@ endif()
 
 find_package(Threads REQUIRED)
 
-# The inherited CLI currently reuses server-context, so its internal targets are
-# always built. CELIUMS_BITNET_BUILD_SERVER controls only the public serve command.
+# Inherited llama.cpp server and CLI targets are compatibility-only.
 set(LLAMA_BUILD_SERVER ON CACHE BOOL "Build internal llama.cpp server components" FORCE)
 set(LLAMA_TESTS_INSTALL OFF CACHE BOOL "Do not install llama.cpp tests" FORCE)
 set(LLAMA_TOOLS_INSTALL ${CELIUMS_BITNET_INSTALL_COMPAT} CACHE BOOL "Install llama.cpp compatibility tools" FORCE)
 set(CELIUMS_BITNET_ENGINE_INSTALL ${CELIUMS_BITNET_INSTALL_COMPAT} CACHE BOOL "Install llama.cpp engine development files" FORCE)
 add_subdirectory(3rdparty/llama.cpp)
+add_subdirectory(src)
 if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TOOLS)
     add_subdirectory(tools)
 endif()
-add_subdirectory(src)
 
-if (NOT TARGET llama-cli-impl OR NOT TARGET llama-bench-impl)
+if (NOT TARGET llama-bench-impl)
     message(FATAL_ERROR "Celiums BitNet Runtime requires LLAMA_BUILD_COMMON=ON and LLAMA_BUILD_TOOLS=ON")
 endif()
+
+add_dependencies(celiums-runtime-bench celiums-bitnet-runtime)
 
 add_executable(celiums-bitnet app/celiums-bitnet.cpp)
 target_compile_features(celiums-bitnet PRIVATE cxx_std_17)
@@ -125,11 +126,10 @@ target_compile_definitions(celiums-bitnet PRIVATE
     CELIUMS_BITNET_RUNTIME_STRICT=1)
 target_link_libraries(celiums-bitnet PRIVATE
     celiums-bitnet-runtime
-    llama-cli-impl
-    llama-bench-impl)
+    celiums-runtime-bench-impl)
 if (CELIUMS_BITNET_BUILD_SERVER)
     target_compile_definitions(celiums-bitnet PRIVATE CELIUMS_BITNET_RUNTIME_SERVER=1)
-    target_link_libraries(celiums-bitnet PRIVATE llama-server-impl)
+    target_link_libraries(celiums-bitnet PRIVATE celiums-runtime-server-impl)
 endif()
 
 set_target_properties(celiums-bitnet PROPERTIES
@@ -144,11 +144,8 @@ install(TARGETS celiums-bitnet-runtime
     PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/celiums)
 
 set(CELIUMS_BITNET_PRIVATE_TARGETS
-    llama-cli-impl llama-bench-impl llama-common llama
-    ggml ggml-base ggml-cpu mtmd)
-if (CELIUMS_BITNET_BUILD_SERVER)
-    list(APPEND CELIUMS_BITNET_PRIVATE_TARGETS llama-server-impl)
-endif()
+    celiums-runtime-bench-impl celiums-runtime-server-impl llama
+    ggml ggml-base ggml-cpu)
 if (NOT CELIUMS_BITNET_INSTALL_COMPAT)
     set_target_properties(llama ggml PROPERTIES PUBLIC_HEADER "")
     if (TARGET mtmd)
@@ -201,4 +198,10 @@ if (BUILD_TESTING)
     add_executable(test-celiums-runtime-api tests/test-runtime-api.c)
     target_link_libraries(test-celiums-runtime-api PRIVATE celiums-bitnet-runtime)
     add_test(NAME test-celiums-runtime-api COMMAND test-celiums-runtime-api)
+    add_executable(test-celiums-runtime-session tests/test-runtime-session.cpp)
+    target_link_libraries(test-celiums-runtime-session PRIVATE celiums-bitnet-runtime)
+    if (EXISTS ${PROJECT_SOURCE_DIR}/models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf)
+        add_test(NAME test-celiums-runtime-session COMMAND test-celiums-runtime-session
+            ${PROJECT_SOURCE_DIR}/models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf)
+    endif()
 endif()

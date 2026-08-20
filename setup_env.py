@@ -84,9 +84,10 @@ def generate_tl(args, model_dir, arch):
         config = preset_dir / f"kernel_config_{args.quant_type}.ini"
         if not header.exists():
             raise FileNotFoundError(f"Pretuned kernel not found: {header}")
-        shutil.copyfile(header, ROOT / "include" / "bitnet-lut-kernels.h")
+        engine_cpu = ROOT / "3rdparty" / "llama.cpp" / "ggml" / "src" / "ggml-cpu"
+        shutil.copyfile(header, engine_cpu / "bitnet-lut-kernels.h")
         if config.exists():
-            shutil.copyfile(config, ROOT / "include" / "kernel_config.ini")
+            shutil.copyfile(config, engine_cpu / "kernel_config.ini")
         return
 
     raise RuntimeError(
@@ -119,11 +120,10 @@ def configure_and_build(args, arch):
         f"-DBITNET_X86_TL2={'ON' if arch == 'x86_64' and args.quant_type == 'tl2' else 'OFF'}",
     ]
     run_command(configure, args.log_dir / "configure.log")
-    targets = ["celiums-bitnet", "celiums-logits-capture"]
+    targets = ["celiums-bitnet", "celiums-runtime-bench", "celiums-logits-capture"]
+    targets.append("celiums-runtime-server")
     if args.build_tests:
         targets.extend(["test-quantize-fns", "test-i2s-mul-mat", "test-celiums-hybrid"])
-    if args.build_server:
-        targets.extend(["llama-cli"])
     run_command(
         [cmake, "--build", str(args.build_dir), "--config", args.build_type,
          "--parallel", str(args.jobs), "--target", *targets],

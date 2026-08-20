@@ -295,7 +295,7 @@ def generate_configurations():
 
 def main():
     parser = argparse.ArgumentParser(description='Tune GEMM configuration for optimal performance')
-    parser.add_argument('--config', default='../include/gemm-config.h', 
+    parser.add_argument('--config', default='../3rdparty/llama.cpp/ggml/src/ggml-cpu/gemm-config.h',
                         help='Path to gemm-config.h file')
     parser.add_argument('--model', default='../models/BitNet-b1.58-2B-4T/ggml-model-i2_s-embed-q6_k.gguf',
                         help='Path to model file')

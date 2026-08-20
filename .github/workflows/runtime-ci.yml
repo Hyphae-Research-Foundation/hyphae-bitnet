@@ -1,0 +1,75 @@
+name: Runtime CI
+
+on:
+  push:
+    branches: [main, "perf/**", "runtime/**"]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy pyyaml
+      - run: python -m unittest tests.test_i2s_conversion tests.test_logits_comparison tests.test_wrappers -v
+
+  runtime:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [native, avx2, scalar]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: >-
+          cmake -S . -B build-${{ matrix.profile }}
+          -DCMAKE_BUILD_TYPE=Release
+          -DLLAMA_BUILD_COMMON=ON
+          -DLLAMA_BUILD_TOOLS=ON
+          -DLLAMA_BUILD_TESTS=ON
+          -DLLAMA_BUILD_EXAMPLES=OFF
+          -DCELIUMS_BITNET_BUILD_SERVER=ON
+          -DCELIUMS_BITNET_CPU_PROFILE=${{ matrix.profile }}
+          -DCELIUMS_BITNET_INSTALL_COMPAT=OFF
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install-${{ matrix.profile }}
+      - run: >-
+          cmake --build build-${{ matrix.profile }} --parallel 2 --target
+          celiums-bitnet celiums-runtime-bench celiums-runtime-server
+          test-celiums-runtime-api test-celiums-runtime-session
+          test-quantize-fns test-i2s-mul-mat test-celiums-hybrid
+      - run: >-
+          ctest --test-dir build-${{ matrix.profile }} --output-on-failure
+          -R 'test-(celiums-runtime-api|celiums-runtime-session|quantize-fns|i2s-mul-mat|celiums-hybrid)$'
+      - run: cmake --install build-${{ matrix.profile }}
+      - run: install-${{ matrix.profile }}/bin/celiums-bitnet version
+
+  sanitizers:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: >-
+          cmake -S . -B build-sanitize
+          -DCMAKE_BUILD_TYPE=Debug
+          -DLLAMA_BUILD_COMMON=ON
+          -DLLAMA_BUILD_TOOLS=ON
+          -DLLAMA_BUILD_TESTS=ON
+          -DLLAMA_BUILD_EXAMPLES=OFF
+          -DLLAMA_SANITIZE_ADDRESS=ON
+          -DLLAMA_SANITIZE_UNDEFINED=ON
+      - run: >-
+          cmake --build build-sanitize --parallel 2 --target
+          test-celiums-runtime-api test-celiums-runtime-session
+          test-quantize-fns test-i2s-mul-mat test-celiums-hybrid
+      - run: >-
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1
+          ctest --test-dir build-sanitize --output-on-failure
+          -R 'test-(celiums-runtime-api|celiums-runtime-session|quantize-fns|i2s-mul-mat|celiums-hybrid)$'

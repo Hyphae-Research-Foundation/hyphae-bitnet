@@ -1,6 +1,10 @@
+import json
+import socket
 import subprocess
 import tempfile
+import time
 import unittest
+import urllib.request
 from pathlib import Path
 
 
@@ -18,7 +22,7 @@ class RuntimeProductTests(unittest.TestCase):
         ).stdout
         self.assertIn("Celiums BitNet Runtime 0.2.0", output)
         self.assertRegex(output, r"product commit: [0-9a-f]{9}")
-        self.assertIn("engine commit: 3015cb476", output)
+        self.assertRegex(output, r"engine commit: [0-9a-f]{9}")
         self.assertIn("strict: true", output)
 
     def test_runtime_help_lists_public_commands(self):
@@ -84,7 +88,7 @@ class RuntimeProductTests(unittest.TestCase):
             [str(binary), "version"], cwd="/tmp", check=True, capture_output=True, text=True
         ).stdout
         self.assertIn("Celiums BitNet Runtime 0.2.0", output)
-        self.assertIn("engine commit: 3015cb476", output)
+        self.assertRegex(output, r"engine commit: [0-9a-f]{9}")
         self.assertFalse((binary.parent / "llama-cli").exists())
         self.assertFalse((binary.parent / "llama-server").exists())
         self.assertFalse((binary.parent / "celiums-logits-capture").exists())
@@ -113,7 +117,7 @@ class RuntimeProductTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             ).stdout
-        self.assertEqual(output.strip(), "0.2.0 3015cb476")
+        self.assertRegex(output.strip(), r"^0\.2\.0 [0-9a-f]{9}$")
 
     def test_install_contains_required_notices(self):
         licenses = Path("/tmp/opencode/celiums-runtime-install/share/celiums-bitnet-runtime")
@@ -143,6 +147,86 @@ class RuntimeProductTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
         self.assertIn("refusing unauthenticated remote host", result.stderr)
+
+    def test_native_run_generates_expected_greedy_prefix(self):
+        binary = ROOT / "build-runtime" / "bin" / "celiums-bitnet"
+        model = ROOT / "models" / "BitNet-b1.58-2B-4T" / "ggml-model-i2_s.gguf"
+        if not binary.exists() or not model.exists():
+            self.skipTest("runtime binary or model is unavailable")
+        output = subprocess.run(
+            [
+                str(binary), "run", "--model", str(model), "--prompt", "Hello",
+                "-n", "4", "--temp", "0", "-t", "1", "-tb", "1",
+                "-c", "128", "-b", "64", "-ub", "64",
+            ],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        self.assertEqual(output, ", I am a\n")
+
+    def test_native_benchmark_reports_prefill_and_decode(self):
+        binary = ROOT / "build-runtime" / "bin" / "celiums-bitnet"
+        model = ROOT / "models" / "BitNet-b1.58-2B-4T" / "ggml-model-i2_s.gguf"
+        if not binary.exists() or not model.exists():
+            self.skipTest("runtime binary or model is unavailable")
+        output = subprocess.run(
+            [
+                str(binary), "bench", "--model", str(model),
+                "-p", "4", "-n", "2", "-t", "1", "-r", "1", "-b", "8", "-ub", "8",
+            ],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        rows = [json.loads(line) for line in output.splitlines()]
+        self.assertEqual([row["test"] for row in rows], ["pp4", "tg2"])
+
+    def test_native_server_openai_completion(self):
+        binary = ROOT / "build-runtime" / "bin" / "celiums-bitnet"
+        model = ROOT / "models" / "BitNet-b1.58-2B-4T" / "ggml-model-i2_s.gguf"
+        if not binary.exists() or not model.exists():
+            self.skipTest("runtime binary or model is unavailable")
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            port = listener.getsockname()[1]
+        process = subprocess.Popen(
+            [
+                str(binary), "serve", "--model", str(model), "--host", "127.0.0.1",
+                "--port", str(port), "-c", "128", "-b", "64", "-ub", "64", "-t", "1", "-tb", "1",
+            ],
+            cwd=ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            for _ in range(120):
+                try:
+                    with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=1) as response:
+                        if response.status == 200:
+                            break
+                except OSError:
+                    time.sleep(0.25)
+            else:
+                self.fail("runtime server did not become ready")
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{port}/v1/completions",
+                data=json.dumps({"prompt": "Hello", "max_tokens": 2, "temperature": 0}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=120) as response:
+                body = json.load(response)
+            self.assertEqual(body["object"], "text_completion")
+            self.assertEqual(body["choices"][0]["text"], ", I")
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
 
 
 if __name__ == "__main__":

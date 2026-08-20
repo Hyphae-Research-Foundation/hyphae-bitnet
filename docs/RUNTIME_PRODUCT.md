@@ -14,15 +14,16 @@ celiums-bitnet validate --model model.gguf
 celiums-bitnet version
 ```
 
-`run`, `serve`, and `bench` currently delegate to the pinned engine's mature
-implementations. Their Celiums entry points are the supported product surface;
-the `llama-*` binaries are optional compatibility tools.
+`run`, `bench`, and `serve` use the Celiums Runtime C API directly. The native
+server exposes `/health`, `/v1/health`, `/v1/models`, `/v1/completions`, and
+`/v1/chat/completions`. The `llama-*` binaries remain optional compatibility
+tools and `llama-bench` remains the performance oracle during the transition.
+The initial native server is synchronous per request and rejects `stream=true`;
+continuous batching and SSE are explicit follow-up work, not silently emulated.
 
 `serve` refuses non-loopback hosts unless an API key is configured or the
 operator explicitly passes `--allow-unauthenticated-remote`.
 Set `CELIUMS_BITNET_BUILD_SERVER=OFF` to omit the public `serve` subcommand.
-The inherited CLI still compiles its private server-context dependency during
-this transition.
 
 ## C API
 
@@ -31,9 +32,14 @@ The experimental v1 C API is declared in
 handles, version queries, model loading, and model metadata without exposing
 `llama_model`, `llama_context`, `ggml_tensor`, or C++ standard-library types.
 
-Generation and Session handles will be added incrementally after their
-ownership, cancellation, and concurrency contracts are fixed. The API remains
-0.x until that lifecycle is complete.
+The API now provides opaque Runtime, Model, Session, and Request handles;
+tokenization and detokenization; prefill and single-token decode; copied logits;
+sampling; synchronous generation; streaming callbacks; stop sequences; and
+cooperative cancellation. A Session serializes its mutable context operations.
+Models and runtimes remain alive while dependent handles exist. The API remains
+0.x while multi-sequence scheduling and asynchronous request ownership mature.
+`celiums_bitnet_request_cancel()` is thread-safe; Request destruction must occur
+after its synchronous generation call has returned.
 
 `celiums_bitnet_model_validate_strict()` performs a full tensor-checking load
 and accepts only `bitnet-b1.58` models marked as `MOSTLY_I2_S` (file type 41).
@@ -61,6 +67,13 @@ The default installation contains:
 
 Set `CELIUMS_BITNET_INSTALL_COMPAT=ON` only when the inherited llama.cpp tools
 and development packages are required.
+
+## CI and packages
+
+`.github/workflows/runtime-ci.yml` validates native, AVX2, scalar, and
+ASan/UBSan builds. `scripts/package-runtime.sh` creates a profile-specific
+archive and `utils/release_manifest.py` records product/engine commits,
+compiler, platform, profile, model hash when supplied, and artifact hashes.
 
 The two-repository boundary remains:
 

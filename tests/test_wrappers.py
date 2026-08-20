@@ -38,17 +38,16 @@ class WrapperCommandTests(unittest.TestCase):
         self.assertEqual(command[command.index("-tb") + 1], "4")
         self.assertIn("hello world", command)
 
-    def test_inference_separate_threads_and_affinity(self):
+    def test_inference_separate_threads(self):
         args = SimpleNamespace(
             model=Path("model.gguf"), n_predict=32, threads=6, threads_batch=14,
-            prompt="prompt", ctx_size=512, temperature=0.8, cpu_mask="0x3f",
-            hybrid_auto=False, conversation=True,
+            prompt="prompt", ctx_size=512, temperature=0.8, cpu_mask=None,
+            hybrid_auto=False, conversation=False,
         )
         with patch.object(inference, "binary_path", return_value=Path("celiums-bitnet")):
             command = inference.build_command(args)
         self.assertEqual(command[command.index("-tb") + 1], "14")
-        self.assertIn("--cpu-strict", command)
-        self.assertIn("-cnv", command)
+        self.assertNotIn("--cpu-strict", command)
 
     def test_server_keeps_continuous_batching(self):
         args = SimpleNamespace(
@@ -63,15 +62,15 @@ class WrapperCommandTests(unittest.TestCase):
         self.assertIn("-cb", command)
         self.assertEqual(command[command.index("-tb") + 1], "12")
 
-    def test_hybrid_auto_is_forwarded(self):
+    def test_native_run_rejects_unsupported_hybrid_auto(self):
         args = SimpleNamespace(
             model=Path("model.gguf"), n_predict=8, threads=2, threads_batch=None,
             prompt="prompt", ctx_size=128, temperature=0.0, cpu_mask=None,
             hybrid_auto=True, conversation=False,
         )
         with patch.object(inference, "binary_path", return_value=Path("celiums-bitnet")):
-            command = inference.build_command(args)
-        self.assertIn("--celiums-hybrid-auto", command)
+            with self.assertRaisesRegex(ValueError, "not yet available"):
+                inference.build_command(args)
 
     def test_server_hybrid_auto_is_forwarded(self):
         args = SimpleNamespace(
@@ -89,7 +88,7 @@ class WrapperCommandTests(unittest.TestCase):
         args = SimpleNamespace(
             build_dir=ROOT / "build", model=Path("model.gguf"), n_prompt=256,
             n_token=128, batch=256, ubatch=64, threads=8, repetitions=5,
-            output="jsonl", cpu_mask="0xff",
+            output="jsonl", cpu_mask=None,
         )
         with patch.object(benchmark, "benchmark_binary", return_value=Path("celiums-bitnet")):
             command = benchmark.build_command(args)
@@ -97,6 +96,16 @@ class WrapperCommandTests(unittest.TestCase):
         self.assertEqual(command[command.index("-b") + 1], "256")
         self.assertEqual(command[command.index("-ub") + 1], "64")
         self.assertNotEqual(command[command.index("-b") + 1], "1")
+
+    def test_native_benchmark_rejects_cpu_mask(self):
+        args = SimpleNamespace(
+            build_dir=ROOT / "build", model=Path("model.gguf"), n_prompt=128,
+            n_token=128, batch=128, ubatch=64, threads=8, repetitions=5,
+            output="jsonl", cpu_mask="0xff",
+        )
+        with patch.object(benchmark, "benchmark_binary", return_value=Path("celiums-bitnet")):
+            with self.assertRaisesRegex(ValueError, "CPU masks"):
+                benchmark.build_command(args)
 
     def test_setup_lists_only_strictly_supported_model(self):
         setup = load_module("celiums_setup", ROOT / "setup_env.py")

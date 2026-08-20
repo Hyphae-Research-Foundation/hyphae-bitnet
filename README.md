@@ -181,6 +181,16 @@ build/bin/celiums-bitnet run --model models/BitNet-b1.58-2B-4T/ggml-model-i2_s.g
 See [docs/RUNTIME_PRODUCT.md](docs/RUNTIME_PRODUCT.md) for the product boundary,
 experimental C API, installation layout, and compatibility policy.
 
+The runtime C API now includes opaque Session and Request handles,
+tokenization, prefill/decode, copied logits, generation, streaming callbacks,
+stop sequences, and cooperative cancellation. `run`, `bench`, and `serve` use
+that API directly.
+
+`serve` exposes the initial OpenAI-compatible `/v1/completions` and
+`/v1/chat/completions` endpoints. HTTP streaming and continuous batching are
+not yet part of the native server; use compatibility tooling only when those
+features are required during the transition.
+
 ### Download, Build, and Convert
 
 ```bash
