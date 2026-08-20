@@ -35,9 +35,18 @@ def parse_args():
     return parser.parse_args()
 
 
+def read_engine_commit(engine):
+    pin = engine / "ENGINE_COMMIT"
+    if pin.is_file():
+        value = pin.read_text(encoding="utf-8").strip()
+        if value:
+            return value
+    return git_value(engine, "rev-parse", "HEAD", check=False) or "unknown"
+
+
 def main():
     args = parse_args()
-    submodule = ROOT / "3rdparty" / "llama.cpp"
+    engine = ROOT / "3rdparty" / "llama.cpp"
     source_dirty = bool(git_value(ROOT, "status", "--porcelain", "--untracked-files=no"))
     if source_dirty and not args.allow_dirty:
         raise RuntimeError("Refusing to write a release manifest from a dirty source tree")
@@ -46,7 +55,7 @@ def main():
         "product_version": "0.2.0",
         "api_version": 1,
         "product_commit": git_value(ROOT, "rev-parse", "HEAD"),
-        "engine_commit": git_value(submodule, "rev-parse", "HEAD"),
+        "engine_commit": read_engine_commit(engine),
         "source_dirty": source_dirty,
         "profile": args.profile,
         "build_type": args.build_type,

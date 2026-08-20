@@ -1,0 +1,12 @@
+Celiums BitNet llama.cpp runtime fork
+Copyright 2026 Celiums Solutions LLC for modifications
+
+Based on llama.cpp, Copyright (c) 2023-2026 The ggml authors.
+Initial Celiums baseline: 390c307752ab78fd8189f359d6954c9ba1be74af
+
+This runtime contains Celiums-specific I2_S correctness fixes, CPU kernels,
+GGUF validation, hybrid scheduling, and tests for use by Celiums BitNet.
+The software remains distributed under the MIT License in LICENSE.
+
+This repository is not affiliated with, sponsored by, endorsed by, or
+supported by ggml-org or Microsoft.

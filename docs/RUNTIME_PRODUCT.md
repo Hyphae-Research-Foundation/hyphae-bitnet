@@ -1,8 +1,8 @@
 # Celiums BitNet Runtime
 
-Celiums BitNet Runtime is the public product layer over the pinned
-`celiums-bitnet-llama` engine. Applications should use the Celiums command and
-API instead of depending directly on llama.cpp or GGML interfaces.
+Celiums BitNet Runtime is the public product layer over the vendored
+BitNet engine at `3rdparty/llama.cpp`. Applications should use the Celiums
+command and API instead of depending directly on llama.cpp or GGML interfaces.
 
 ## Commands
 
@@ -77,9 +77,12 @@ ASan/UBSan builds. `scripts/package-runtime.sh` creates a profile-specific
 archive and `utils/release_manifest.py` records product/engine commits,
 compiler, platform, profile, model hash when supplied, and artifact hashes.
 
-The two-repository boundary remains:
+The engine is vendored in-tree at `3rdparty/llama.cpp` (single-repository
+layout). `3rdparty/llama.cpp/ENGINE_COMMIT` records the engine snapshot
+commit; the archived engine repository is
+`https://github.com/celiumsai/celiums-bitnet-llama`:
 
 ```text
-celiums-bitnet        public product, API, packaging, CI, and integration tests
-celiums-bitnet-llama  pinned internal engine, graph, GGML, and I2_S kernels
+Celiums BitNet        product, API, packaging, CI, integration tests,
+                      and the vendored engine, graph, GGML, and I2_S kernels
 ```

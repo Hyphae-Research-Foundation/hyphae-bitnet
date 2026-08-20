@@ -10,8 +10,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -26,8 +24,6 @@ jobs:
         profile: [native, avx2, scalar]
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - run: >-
           cmake -S . -B build-${{ matrix.profile }}
           -DCMAKE_BUILD_TYPE=Release
@@ -54,8 +50,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - run: >-
           cmake -S . -B build-sanitize
           -DCMAKE_BUILD_TYPE=Debug

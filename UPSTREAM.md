@@ -10,9 +10,9 @@ Celiums BitNet is derived from [Microsoft BitNet](https://github.com/microsoft/B
 
 ## Update Policy
 
-Upstream changes are reviewed and imported manually. We do not use
-`git submodule update --remote`; the exact submodule commit is part of each
-Celiums release.
+Upstream changes are reviewed and imported manually. The engine is vendored
+in-tree at `3rdparty/llama.cpp`; the snapshot's engine commit is recorded in
+`3rdparty/llama.cpp/ENGINE_COMMIT` and is part of each Celiums release.
 
 An upstream update must pass the strict numerical tests, model perplexity tests,
 and hardware benchmark matrix before it can enter a release.

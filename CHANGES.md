@@ -34,6 +34,10 @@
   compiler, and artifact-hash manifest entries.
 - Kept the `llama-*` compatibility tools available behind
   `CELIUMS_BITNET_INSTALL_COMPAT=ON`.
+- Consolidated the pinned engine into the product repository
+  (`3rdparty/llama.cpp`), recording the engine snapshot commit in
+  `3rdparty/llama.cpp/ENGINE_COMMIT`. The archived engine repository is
+  `https://github.com/celiumsai/celiums-bitnet-llama`.
 
 ## 0.1.0 - 2026-08-18
 

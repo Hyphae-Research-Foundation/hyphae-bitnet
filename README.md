@@ -148,7 +148,7 @@ for the recorded environment.
 - Python 3.10 or newer
 - CMake 3.22 or newer
 - A C/C++ compiler with C++17 support
-- Git with submodule support
+- Git
 - Python packages from `requirements.txt` for model conversion
 
 ### Clone
@@ -317,8 +317,9 @@ tests/                              Python conversion and wrapper tests
   experimental unless explicitly listed in the hardware matrix.
 - Full source-checkpoint logits/perplexity comparison remains a release gate
   for broader model compatibility claims.
-- Clone reproducibility depends on the pinned Celiums llama.cpp submodule
-  commit recorded by this repository.
+- Clone reproducibility depends on the vendored engine tree at
+  `3rdparty/llama.cpp`; its snapshot commit is recorded in
+  `3rdparty/llama.cpp/ENGINE_COMMIT`.
 
 ## Roadmap
 
