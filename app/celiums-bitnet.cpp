@@ -20,7 +20,9 @@ void print_help(const char * program) {
     printf("Usage: %s <command> [options]\n\n", program);
     printf("Commands:\n");
     printf("  run       Run interactive BitNet inference\n");
+#ifdef CELIUMS_BITNET_RUNTIME_SERVER
     printf("  serve     Start the HTTP API server\n");
+#endif
     printf("  bench     Benchmark prefill and decode\n");
     printf("  validate  Load a model and print validated metadata\n");
     printf("  version   Show runtime and engine versions\n");
@@ -31,6 +33,7 @@ int print_version() {
     printf("Celiums BitNet Runtime %s\n", celiums_bitnet_version());
     printf("product commit: %s\n", celiums_bitnet_product_commit());
     printf("engine commit: %s\n", celiums_bitnet_engine_commit());
+    printf("engine tree: %s\n", celiums_bitnet_engine_tree());
     printf("cpu profile: %s\n", celiums_bitnet_cpu_profile());
     printf("strict: true\n");
     return 0;
@@ -185,97 +188,11 @@ int run_inference(int argc, char ** argv) {
     return status == CELIUMS_BITNET_STATUS_OK ? 0 : 1;
 }
 
-bool is_loopback_host(const std::string & host) {
-    return host == "localhost" || host == "::1" || host.rfind("127.", 0) == 0;
-}
-
-int serve(int argc, char ** argv) {
-    std::string host = "127.0.0.1";
-    bool authenticated = std::getenv("LLAMA_API_KEY") != nullptr;
-    bool allow_unauthenticated_remote = false;
-    std::vector<char *> forwarded;
-    forwarded.reserve(argc);
-    forwarded.push_back(argv[0]);
-
-    for (int index = 1; index < argc; ++index) {
-        const std::string argument = argv[index];
-        if (argument == "--allow-unauthenticated-remote") {
-            allow_unauthenticated_remote = true;
-            continue;
-        }
-        if (argument == "--api-key-file") {
-            if (index + 1 >= argc) {
-                fprintf(stderr, "celiums-bitnet serve: --api-key-file requires a path\n");
-                return 2;
-            }
-            const char * path = argv[++index];
-            FILE * file = fopen(path, "rb");
-            if (!file) {
-                fprintf(stderr, "celiums-bitnet serve: failed to open API key file '%s'\n", path);
-                return 2;
-            }
-            char key[1024];
-            const size_t size = fread(key, 1, sizeof(key) - 1, file);
-            fclose(file);
-            key[size] = '\0';
-            std::string value(key);
-            while (!value.empty() && (value.back() == '\n' || value.back() == '\r')) value.pop_back();
-            if (value.empty()) {
-                fprintf(stderr, "celiums-bitnet serve: API key file is empty\n");
-                return 2;
-            }
-#ifdef _WIN32
-            _putenv_s("CELIUMS_BITNET_API_KEY", value.c_str());
-#else
-            setenv("CELIUMS_BITNET_API_KEY", value.c_str(), 1);
-#endif
-            authenticated = true;
-            continue;
-        }
-        if (argument == "--host" && index + 1 < argc) {
-            host = argv[index + 1];
-        } else if (argument.rfind("--host=", 0) == 0) {
-            host = argument.substr(strlen("--host="));
-        } else if (argument == "--api-key") {
-            if (index + 1 >= argc) {
-                fprintf(stderr, "celiums-bitnet serve: --api-key requires a value\n");
-                return 2;
-            }
-            const char * value = argv[++index];
-#ifdef _WIN32
-            _putenv_s("CELIUMS_BITNET_API_KEY", value);
-#else
-            setenv("CELIUMS_BITNET_API_KEY", value, 1);
-#endif
-            authenticated = true;
-            continue;
-        } else if (argument.rfind("--api-key=", 0) == 0) {
-            const std::string value = argument.substr(strlen("--api-key="));
-#ifdef _WIN32
-            _putenv_s("CELIUMS_BITNET_API_KEY", value.c_str());
-#else
-            setenv("CELIUMS_BITNET_API_KEY", value.c_str(), 1);
-#endif
-            authenticated = !value.empty();
-            continue;
-        }
-        forwarded.push_back(argv[index]);
-    }
-
-    if (!is_loopback_host(host) && !authenticated && !allow_unauthenticated_remote) {
-        fprintf(stderr,
-                "celiums-bitnet serve: refusing unauthenticated remote host '%s'; "
-                "use --api-key-file or --allow-unauthenticated-remote\n",
-                host.c_str());
-        return 2;
-    }
 #ifdef CELIUMS_BITNET_RUNTIME_SERVER
-    return celiums_runtime_server((int) forwarded.size(), forwarded.data());
-#else
-    fprintf(stderr, "celiums-bitnet: server support was not built\n");
-    return 1;
-#endif
+int serve(int argc, char ** argv) {
+    return celiums_runtime_server(argc, argv);
 }
+#endif
 
 int validate_model(int argc, char ** argv) {
     const char * path = nullptr;
@@ -341,9 +258,11 @@ int main(int argc, char ** argv) {
     if (strcmp(argv[1], "validate") == 0) {
         return validate_model(argc - 1, argv + 1);
     }
+#ifdef CELIUMS_BITNET_RUNTIME_SERVER
     if (strcmp(argv[1], "serve") == 0) {
         return serve(argc - 1, argv + 1);
     }
+#endif
     fprintf(stderr, "celiums-bitnet: unknown command '%s'\n", argv[1]);
     return 2;
 }

@@ -9,7 +9,7 @@ int main(void) {
 
     if (options.struct_size != sizeof(options) ||
             options.api_version != CELIUMS_BITNET_API_VERSION ||
-            strcmp(celiums_bitnet_version(), "0.2.0") != 0 ||
+            strcmp(celiums_bitnet_version(), CELIUMS_BITNET_TEST_VERSION) != 0 ||
             strlen(celiums_bitnet_product_commit()) != 9 ||
             celiums_bitnet_runtime_create(&options, &runtime) != CELIUMS_BITNET_STATUS_OK ||
             runtime == NULL) {

@@ -230,6 +230,10 @@ const char * celiums_bitnet_engine_commit(void) {
     return CELIUMS_BITNET_ENGINE_COMMIT;
 }
 
+const char * celiums_bitnet_engine_tree(void) {
+    return CELIUMS_BITNET_ENGINE_TREE;
+}
+
 const char * celiums_bitnet_cpu_profile(void) {
     return CELIUMS_BITNET_RUNTIME_PROFILE;
 }

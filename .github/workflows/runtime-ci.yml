@@ -1,8 +1,9 @@
 name: Runtime CI
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main, "perf/**", "runtime/**"]
+    branches: [main, "perf/**", "runtime/**", "release/**"]
   pull_request:
 
 jobs:
@@ -27,24 +28,44 @@ jobs:
       - run: >-
           cmake -S . -B build-${{ matrix.profile }}
           -DCMAKE_BUILD_TYPE=Release
-          -DLLAMA_BUILD_COMMON=ON
-          -DLLAMA_BUILD_TOOLS=ON
+          -DBUILD_SHARED_LIBS=ON
           -DLLAMA_BUILD_TESTS=ON
           -DLLAMA_BUILD_EXAMPLES=OFF
+          -DLLAMA_BUILD_UI=OFF
+          -DLLAMA_USE_PREBUILT_UI=OFF
           -DCELIUMS_BITNET_BUILD_SERVER=ON
           -DCELIUMS_BITNET_CPU_PROFILE=${{ matrix.profile }}
           -DCELIUMS_BITNET_INSTALL_COMPAT=OFF
+          -DCELIUMS_BITNET_VERIFY_ENGINE_TREE=ON
           -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install-${{ matrix.profile }}
       - run: >-
           cmake --build build-${{ matrix.profile }} --parallel 2 --target
           celiums-bitnet celiums-runtime-bench celiums-runtime-server
-          test-celiums-runtime-api test-celiums-runtime-session
-          test-quantize-fns test-i2s-mul-mat test-celiums-hybrid
+          test-celiums-runtime-api test-quantize-fns test-i2s-mul-mat test-celiums-hybrid
       - run: >-
-          ctest --test-dir build-${{ matrix.profile }} --output-on-failure
-          -R 'test-(celiums-runtime-api|celiums-runtime-session|quantize-fns|i2s-mul-mat|celiums-hybrid)$'
+          ctest --test-dir build-${{ matrix.profile }} --output-on-failure --no-tests=error
+          -R 'test-(celiums-runtime-api|quantize-fns|i2s-mul-mat|celiums-hybrid)$'
       - run: cmake --install build-${{ matrix.profile }}
-      - run: install-${{ matrix.profile }}/bin/celiums-bitnet version
+      - run: >-
+          CELIUMS_BITNET_TEST_BUILD_DIR=${{ github.workspace }}/build-${{ matrix.profile }}
+          CELIUMS_BITNET_TEST_INSTALL_PREFIX=${{ github.workspace }}/install-${{ matrix.profile }}
+          python -m unittest tests.test_runtime_product -v
+      - if: matrix.profile == 'avx2'
+        run: |
+          for option in GGML_AVX_VNNI GGML_AVX512 GGML_AVX512_VBMI GGML_AVX512_VNNI GGML_AVX512_BF16 GGML_AMX_TILE GGML_AMX_INT8 GGML_AMX_BF16 GGML_BMI2; do
+            grep -qx "${option}:BOOL=OFF" build-avx2/CMakeCache.txt
+          done
+          for option in GGML_SSE42 GGML_AVX GGML_AVX2 GGML_FMA GGML_F16C; do
+            grep -qx "${option}:BOOL=ON" build-avx2/CMakeCache.txt
+          done
+
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: ALLOW_DIRTY=1 JOBS=2 ./scripts/package-runtime.sh scalar /tmp/package-build /tmp/package-stage package.tar.gz
+      - run: set -o pipefail; tar -tzf package.tar.gz | sort; test -f package.tar.gz.json
+      - run: /tmp/package-stage/usr/bin/celiums-bitnet version
 
   sanitizers:
     runs-on: ubuntu-24.04
@@ -53,10 +74,11 @@ jobs:
       - run: >-
           cmake -S . -B build-sanitize
           -DCMAKE_BUILD_TYPE=Debug
-          -DLLAMA_BUILD_COMMON=ON
-          -DLLAMA_BUILD_TOOLS=ON
           -DLLAMA_BUILD_TESTS=ON
           -DLLAMA_BUILD_EXAMPLES=OFF
+          -DLLAMA_BUILD_UI=OFF
+          -DLLAMA_USE_PREBUILT_UI=OFF
+          -DCELIUMS_BITNET_VERIFY_ENGINE_TREE=ON
           -DBUILD_SHARED_LIBS=OFF
           -DLLAMA_SANITIZE_ADDRESS=ON
           -DLLAMA_SANITIZE_UNDEFINED=ON
@@ -67,9 +89,36 @@ jobs:
           -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined
       - run: >-
           cmake --build build-sanitize --parallel 2 --target
-          test-celiums-runtime-api test-celiums-runtime-session
-          test-quantize-fns test-i2s-mul-mat test-celiums-hybrid
+          test-celiums-runtime-api test-quantize-fns test-i2s-mul-mat test-celiums-hybrid
       - run: >-
           ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1
-          ctest --test-dir build-sanitize --output-on-failure
-          -R 'test-(celiums-runtime-api|celiums-runtime-session|quantize-fns|i2s-mul-mat|celiums-hybrid)$'
+          ctest --test-dir build-sanitize --output-on-failure --no-tests=error
+          -R 'test-(celiums-runtime-api|quantize-fns|i2s-mul-mat|celiums-hybrid)$'
+
+  release-model:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - run: >-
+          cmake -S . -B build-release-model
+          -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+          -DLLAMA_BUILD_TESTS=ON -DLLAMA_BUILD_EXAMPLES=OFF
+          -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF
+          -DCELIUMS_BITNET_VERIFY_ENGINE_TREE=ON
+          -DCELIUMS_BITNET_TEST_MODEL=${{ vars.CELIUMS_BITNET_MODEL }}
+      - run: cmake --build build-release-model --parallel 2
+      - run: test -f "${{ vars.CELIUMS_BITNET_MODEL }}"
+      - run: test -f "${{ vars.CELIUMS_BITNET_ORACLE }}" && test -f "${{ vars.CELIUMS_BITNET_ORACLE }}.json"
+      - run: >-
+          CELIUMS_BITNET_TEST_BUILD_DIR=${{ github.workspace }}/build-release-model
+          CELIUMS_BITNET_TEST_MODEL=${{ vars.CELIUMS_BITNET_MODEL }}
+          python -m unittest tests.test_runtime_product -v
+      - run: >-
+          python utils/compare_runtime_logits.py
+          --library build-release-model/src/libceliums-bitnet-runtime.so
+          --model "${{ vars.CELIUMS_BITNET_MODEL }}"
+          --reference "${{ vars.CELIUMS_BITNET_ORACLE }}"
+          --reference-sidecar "${{ vars.CELIUMS_BITNET_ORACLE }}.json"
+          --expected-model-sha256 e23b16fa81b890e8b65e676262b645e8ffa5ae1f6df89dadaf793246826bbd90
+          --require-bitwise

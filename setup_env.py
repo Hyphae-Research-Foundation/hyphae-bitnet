@@ -75,27 +75,7 @@ def validate_source_model(model_dir):
         raise RuntimeError(f"Unsupported strict model activation: {config.get('hidden_act')}")
 
 
-def generate_tl(args, model_dir, arch):
-    if args.quant_type == "i2_s":
-        return
-    if args.use_pretuned:
-        preset_dir = ROOT / "preset_kernels" / model_dir.name
-        header = preset_dir / f"bitnet-lut-kernels-{args.quant_type}.h"
-        config = preset_dir / f"kernel_config_{args.quant_type}.ini"
-        if not header.exists():
-            raise FileNotFoundError(f"Pretuned kernel not found: {header}")
-        engine_cpu = ROOT / "3rdparty" / "llama.cpp" / "ggml" / "src" / "ggml-cpu"
-        shutil.copyfile(header, engine_cpu / "bitnet-lut-kernels.h")
-        if config.exists():
-            shutil.copyfile(config, engine_cpu / "kernel_config.ini")
-        return
-
-    raise RuntimeError(
-        "TL code generation remains experimental. Use --use-pretuned with a matching preset."
-    )
-
-
-def configure_and_build(args, arch):
+def configure_and_build(args):
     cmake = args.cmake or shutil.which("cmake")
     if not cmake:
         raise FileNotFoundError("cmake is required")
@@ -110,14 +90,12 @@ def configure_and_build(args, arch):
         f"-DCMAKE_BUILD_TYPE={args.build_type}",
         f"-DCMAKE_C_COMPILER={c_compiler}",
         f"-DCMAKE_CXX_COMPILER={cxx_compiler}",
-        "-DLLAMA_BUILD_TOOLS=ON",
-        "-DLLAMA_BUILD_COMMON=ON",
         f"-DCELIUMS_BITNET_CPU_PROFILE={args.cpu_profile}",
-        f"-DLLAMA_BUILD_EXAMPLES={'ON' if args.build_examples else 'OFF'}",
         f"-DCELIUMS_BITNET_BUILD_SERVER={'ON' if args.build_server else 'OFF'}",
         f"-DLLAMA_BUILD_TESTS={'ON' if args.build_tests else 'OFF'}",
-        f"-DBITNET_ARM_TL1={'ON' if arch == 'arm64' and args.quant_type == 'tl1' else 'OFF'}",
-        f"-DBITNET_X86_TL2={'ON' if arch == 'x86_64' and args.quant_type == 'tl2' else 'OFF'}",
+        "-DLLAMA_BUILD_EXAMPLES=OFF",
+        "-DLLAMA_BUILD_UI=OFF",
+        "-DLLAMA_USE_PREBUILT_UI=OFF",
     ]
     run_command(configure, args.log_dir / "configure.log")
     targets = ["celiums-bitnet", "celiums-runtime-bench", "celiums-logits-capture"]
@@ -135,8 +113,6 @@ def configure_and_build(args, arch):
 def convert_model(args, model_dir):
     if args.build_only:
         return
-    if args.quant_embd:
-        raise RuntimeError("--quant-embd is temporarily disabled pending strict embedding validation")
     if not model_dir.exists():
         raise FileNotFoundError(f"Model directory not found: {model_dir}")
 
@@ -156,21 +132,12 @@ def convert_model(args, model_dir):
         "--outtype", args.quant_type,
         "--outfile", str(output),
     ]
-    if args.quant_embd:
-        command.append("--quant-embd")
     run_command(command, args.log_dir / "convert_model.log")
     if args.quant_type == "i2_s":
         validate_i2s_gguf(output)
 
 
 def parse_args():
-    _, arch = system_info()
-    quant_choices = ["i2_s"]
-    if arch == "arm64":
-        quant_choices.append("tl1")
-    if arch == "x86_64":
-        quant_choices.append("tl2")
-
     parser = argparse.ArgumentParser(description="Build Celiums BitNet and optionally prepare a model")
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--hf-repo", choices=SUPPORTED_HF_MODELS)
@@ -179,14 +146,11 @@ def parse_args():
     parser.add_argument("--model-dir", type=Path, default=ROOT / "models")
     parser.add_argument("--build-dir", type=Path, default=ROOT / "build")
     parser.add_argument("--log-dir", type=Path, default=ROOT / "logs")
-    parser.add_argument("--quant-type", "-q", choices=quant_choices, default="i2_s")
-    parser.add_argument("--quant-embd", action="store_true")
-    parser.add_argument("--use-pretuned", action="store_true")
+    parser.add_argument("--quant-type", "-q", choices=("i2_s",), default="i2_s")
     parser.add_argument("--build-only", action="store_true")
     parser.add_argument("--force-convert", action="store_true")
     parser.add_argument("--build-tests", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--build-server", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--build-examples", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--build-type", default="Release")
     parser.add_argument("--cpu-profile", choices=("native", "avx2", "scalar"), default="native")
     parser.add_argument("--jobs", type=int, default=max(1, os.cpu_count() or 1))
@@ -202,12 +166,11 @@ def parse_args():
 
 def main():
     args = parse_args()
-    _, arch = system_info()
+    system_info()
     model_dir = resolve_model_dir(args)
     args.log_dir.mkdir(parents=True, exist_ok=True)
     download_model(args, model_dir)
-    generate_tl(args, model_dir, arch)
-    configure_and_build(args, arch)
+    configure_and_build(args)
     convert_model(args, model_dir)
 
 

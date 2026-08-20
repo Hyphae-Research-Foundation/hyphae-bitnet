@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
 
 def git_value(path, *arguments, check=True):
@@ -35,27 +36,50 @@ def parse_args():
     return parser.parse_args()
 
 
-def read_engine_commit(engine):
-    pin = engine / "ENGINE_COMMIT"
-    if pin.is_file():
-        value = pin.read_text(encoding="utf-8").strip()
-        if value:
-            return value
-    return git_value(engine, "rev-parse", "HEAD", check=False) or "unknown"
+def read_required_hash(path):
+    value = path.read_text(encoding="utf-8").strip()
+    if len(value) != 40 or any(character not in "0123456789abcdef" for character in value):
+        raise RuntimeError(f"Invalid provenance hash in {path.relative_to(ROOT)}")
+    return value
+
+
+def display_path(path):
+    resolved = path.resolve()
+    try:
+        return str(resolved.relative_to(ROOT))
+    except ValueError:
+        return path.name
+
+
+def ignored_untracked_paths():
+    ignored = {"stage-native/", "stage-avx2/", "stage-scalar/"}
+    return ignored
 
 
 def main():
     args = parse_args()
-    engine = ROOT / "3rdparty" / "llama.cpp"
-    source_dirty = bool(git_value(ROOT, "status", "--porcelain", "--untracked-files=no"))
+    status_lines = git_value(ROOT, "status", "--porcelain", "--untracked-files=all").splitlines()
+    output_path = args.output.resolve()
+    generated_paths = {artifact.resolve() for artifact in args.artifact}
+    generated_paths.add(output_path)
+    source_dirty = any(
+        not (
+            line.startswith("?? ") and (
+                line[3:] in ignored_untracked_paths() or
+                (ROOT / line[3:]).resolve() in generated_paths
+            )
+        )
+        for line in status_lines
+    )
     if source_dirty and not args.allow_dirty:
         raise RuntimeError("Refusing to write a release manifest from a dirty source tree")
     manifest = {
-        "schema": "celiums-bitnet-runtime-build-v1",
-        "product_version": "0.2.0",
+        "schema": "celiums-bitnet-runtime-build-v2",
+        "product_version": VERSION,
         "api_version": 1,
         "product_commit": git_value(ROOT, "rev-parse", "HEAD"),
-        "engine_commit": read_engine_commit(engine),
+        "engine_commit": read_required_hash(ROOT / "3rdparty" / "llama.cpp" / "ENGINE_COMMIT"),
+        "engine_tree": read_required_hash(ROOT / "cmake" / "ENGINE_TREE"),
         "source_dirty": source_dirty,
         "profile": args.profile,
         "build_type": args.build_type,
@@ -64,17 +88,23 @@ def main():
         "machine": platform.machine(),
         "artifacts": [],
     }
+    actual_engine_tree = subprocess.run(
+        [str(ROOT / "scripts" / "compute-engine-tree.sh")], cwd=ROOT, check=True,
+        capture_output=True, text=True,
+    ).stdout.strip()
+    if actual_engine_tree != manifest["engine_tree"]:
+        raise RuntimeError("Vendored engine tree does not match cmake/ENGINE_TREE")
     if args.model:
         model = args.model.resolve()
         manifest["model"] = {
-            "path": str(model),
+            "path": display_path(args.model),
             "size": model.stat().st_size,
             "sha256": sha256_file(model),
         }
     for artifact in args.artifact:
         path = artifact.resolve()
         manifest["artifacts"].append({
-            "path": str(path),
+            "path": display_path(artifact),
             "size": path.stat().st_size,
             "sha256": sha256_file(path),
         })

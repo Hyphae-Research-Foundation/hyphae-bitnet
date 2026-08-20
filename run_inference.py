@@ -35,8 +35,6 @@ def build_command(args):
         "-c", str(args.ctx_size),
         "--temp", str(args.temperature),
     ]
-    if args.cpu_mask or args.hybrid_auto or args.conversation:
-        raise ValueError("CPU masks, hybrid-auto, and conversation mode are not yet available in the native run command")
     return command
 
 
@@ -49,9 +47,6 @@ def parse_args():
     parser.add_argument("-tb", "--threads-batch", "--threads-prefill", type=int)
     parser.add_argument("-c", "--ctx-size", type=int, default=2048)
     parser.add_argument("-temp", "--temperature", type=float, default=0.8)
-    parser.add_argument("--cpu-mask", help="CPU affinity mask passed to the runtime engine")
-    parser.add_argument("--hybrid-auto", action="store_true", help="Use Celiums phase-aware hybrid CPU defaults")
-    parser.add_argument("-cnv", "--conversation", action="store_true")
     return parser.parse_args()
 
 

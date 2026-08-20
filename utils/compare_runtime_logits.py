@@ -96,6 +96,7 @@ def configure_library(path):
         "celiums_bitnet_version",
         "celiums_bitnet_product_commit",
         "celiums_bitnet_engine_commit",
+        "celiums_bitnet_engine_tree",
         "celiums_bitnet_cpu_profile",
     ):
         getattr(library, name).restype = ctypes.c_char_p
@@ -110,7 +111,7 @@ def require_status(library, status, expected, operation):
         raise RuntimeError(f"{operation} failed: {text} ({status})")
 
 
-def compare_runtime(library_path, model_path, reference_path):
+def compare_runtime(library_path, model_path, reference_path, reference_sidecar=None):
     tokens, positions, logits, metadata, _ = load_capture(reference_path)
     final_position, reference = final_reference_row(tokens, positions, logits)
     if positions.size != 1:
@@ -201,7 +202,7 @@ def compare_runtime(library_path, model_path, reference_path):
             "logits copy",
         )
         candidate = np.ctypeslib.as_array(logits_buffer).copy()
-        return {
+        report = {
             "schema": "celiums-runtime-logits-comparison-v1",
             "library": str(library_path),
             "model": str(model_path),
@@ -213,9 +214,21 @@ def compare_runtime(library_path, model_path, reference_path):
             "runtime_version": decode_string(library.celiums_bitnet_version()),
             "product_commit": decode_string(library.celiums_bitnet_product_commit()),
             "engine_commit": decode_string(library.celiums_bitnet_engine_commit()),
+            "engine_tree": decode_string(library.celiums_bitnet_engine_tree()),
             "cpu_profile": decode_string(library.celiums_bitnet_cpu_profile()),
             "reference_build": decode_string(metadata["celiums.logits_capture.build.commit"]),
         }
+        if reference_sidecar:
+            sidecar = json.loads(reference_sidecar.read_text(encoding="utf-8"))
+            reference_engine_commit = sidecar.get("engine_commit") or sidecar.get("submodule_commit")
+            if reference_engine_commit and not report["engine_commit"].startswith(reference_engine_commit[:9]):
+                raise ValueError("Runtime engine commit differs from the oracle sidecar")
+            reference_engine_tree = sidecar.get("engine_tree")
+            if reference_engine_tree and reference_engine_tree != report["engine_tree"]:
+                raise ValueError("Runtime engine tree differs from the oracle sidecar")
+            report["reference_engine_commit"] = reference_engine_commit
+            report["reference_engine_tree"] = reference_engine_tree
+        return report
     finally:
         if session.value:
             library.celiums_bitnet_session_destroy(session)
@@ -230,13 +243,16 @@ def parse_args():
     parser.add_argument("--library", type=Path, required=True)
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True)
+    parser.add_argument("--reference-sidecar", type=Path)
     parser.add_argument("--expected-model-sha256")
     parser.add_argument("--require-bitwise", action="store_true")
     parser.add_argument("--max-abs", type=float)
     parser.add_argument("--max-nmse", type=float)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    for path in (args.library, args.model, args.reference):
+    for path in (args.library, args.model, args.reference, args.reference_sidecar):
+        if path is None:
+            continue
         if not path.is_file():
             parser.error(f"File not found: {path}")
     for name in ("max_abs", "max_nmse"):
@@ -256,7 +272,9 @@ def main():
         actual = sha256_file(args.model)
         if actual.lower() != args.expected_model_sha256.lower():
             raise ValueError(f"Model SHA-256 differs: {actual}")
-    report = compare_runtime(args.library.resolve(), args.model.resolve(), args.reference.resolve())
+    report = compare_runtime(
+        args.library.resolve(), args.model.resolve(), args.reference.resolve(), args.reference_sidecar
+    )
     serialized = json.dumps(report, indent=2) + "\n"
     if args.output:
         args.output.write_text(serialized, encoding="utf-8")

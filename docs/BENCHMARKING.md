@@ -2,7 +2,7 @@
 
 Report prefill and decode separately. Every result must include:
 
-- Celiums BitNet and submodule commits.
+- Celiums BitNet product commit, engine commit, and vendored engine tree hash.
 - Model filename and SHA256.
 - CPU/GPU model and exposed ISA.
 - Compiler and flags.
@@ -69,8 +69,8 @@ the exact build commit into CMake metadata.
 ## Exact-Commit C-60 Baseline and GEMV8
 
 The Phase 0 source was reconstructed from Git bundles on a clean
-DigitalOcean `c-60-intel`, preserving root commit `df0165b` and submodule
-commit `d608d85b7`. The host exposed 60 dedicated Intel Xeon Platinum 8358
+DigitalOcean `c-60-intel`, preserving historical product commit `df0165b` and
+the then-separate engine commit `d608d85b7`. The host exposed 60 dedicated Intel Xeon Platinum 8358
 cores, AVX-512 VNNI, 120 GiB RAM, and one NUMA node. GCC 13.3.0 built Release
 targets with `-march=native`. Every cell used strict affinity, batch/ubatch
 128, and five samples.

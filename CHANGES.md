@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.1 - 2026-08-20
+
+- Completed the single-repository migration with an exact vendored engine tree
+  hash and consistent product, engine, and exactness provenance.
+- Centralized remote-bind and API-key enforcement in the native server, with
+  `CELIUMS_BITNET_API_KEY` as the canonical variable. `LLAMA_API_KEY` is accepted
+  to close the unsafe 0.2.0 precheck, and now enforces authentication.
+- Reduced default builds to the Celiums runtime surface and disabled inherited
+  server, application, and Web UI downloads unless compatibility is requested.
+- Made server-disabled builds omit the public command and server targets.
+- Exported a relocatable shared CMake SDK and made static builds internal-only.
+- Closed the AVX2 ISA contract, strengthened CI and product tests, and limited
+  release packages to validated Linux x86_64 profiles.
+- Corrected an x86 quantization read that UBSan identified as unaligned.
+- Restricted supported setup and wrapper options to the strict I2_S product path.
+
 ## 0.2.0 - 2026-08-19
 
 - Added the Celiums BitNet Runtime product layer: `celiums-bitnet`

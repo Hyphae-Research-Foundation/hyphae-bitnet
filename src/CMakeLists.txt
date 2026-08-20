@@ -10,6 +10,7 @@ add_library(Celiums::BitNetRuntime ALIAS celiums-bitnet-runtime)
 
 set_target_properties(celiums-bitnet-runtime PROPERTIES
     OUTPUT_NAME celiums-bitnet-runtime
+    EXPORT_NAME BitNetRuntime
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}
     C_VISIBILITY_PRESET hidden
@@ -23,7 +24,8 @@ target_compile_definitions(celiums-bitnet-runtime PRIVATE
     CELIUMS_BITNET_RUNTIME_VERSION="${PROJECT_VERSION}"
     CELIUMS_BITNET_RUNTIME_PROFILE="${CELIUMS_BITNET_CPU_PROFILE}"
     CELIUMS_BITNET_PRODUCT_COMMIT="${CELIUMS_BITNET_PRODUCT_COMMIT}"
-    CELIUMS_BITNET_ENGINE_COMMIT="${CELIUMS_BITNET_ENGINE_COMMIT}")
+    CELIUMS_BITNET_ENGINE_COMMIT="${CELIUMS_BITNET_ENGINE_COMMIT}"
+    CELIUMS_BITNET_ENGINE_TREE="${CELIUMS_BITNET_ENGINE_TREE}")
 target_include_directories(celiums-bitnet-runtime
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>

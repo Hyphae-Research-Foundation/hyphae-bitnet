@@ -1,6 +1,11 @@
 {
   "schema": "celiums-exactness-oracle-results-v1",
   "date": "2026-08-19",
+  "source": {
+    "product_commit": "6e28f0dac7754e91ee4a05d0340b64885a9ea328",
+    "engine_commit": "e1002b8bedcd14bcdcc88fe480a1e98d5fa9eeb7",
+    "layout": "historical-submodule"
+  },
   "model": {
     "path": "models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf",
     "sha256": "e23b16fa81b890e8b65e676262b645e8ffa5ae1f6df89dadaf793246826bbd90"

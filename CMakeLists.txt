@@ -1,9 +1,15 @@
 cmake_minimum_required(VERSION 3.22)
-project(CeliumsBitNetRuntime VERSION 0.2.0 LANGUAGES C CXX)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" CELIUMS_BITNET_VERSION)
+string(STRIP "${CELIUMS_BITNET_VERSION}" CELIUMS_BITNET_VERSION)
+if (NOT CELIUMS_BITNET_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "VERSION must contain a semantic version")
+endif()
+project(CeliumsBitNetRuntime VERSION ${CELIUMS_BITNET_VERSION} LANGUAGES C CXX)
 include(CheckIncludeFileCXX)
 include(CTest)
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
+option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 
 execute_process(
     COMMAND git -C ${CMAKE_CURRENT_SOURCE_DIR} rev-parse --short=9 HEAD
@@ -13,20 +19,52 @@ execute_process(
 if (NOT CELIUMS_BITNET_PRODUCT_COMMIT)
     set(CELIUMS_BITNET_PRODUCT_COMMIT "unknown")
 endif()
-set(CELIUMS_BITNET_ENGINE_PIN ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/llama.cpp/ENGINE_COMMIT)
-if (EXISTS ${CELIUMS_BITNET_ENGINE_PIN})
-    file(READ ${CELIUMS_BITNET_ENGINE_PIN} CELIUMS_BITNET_ENGINE_COMMIT_FULL)
-    string(STRIP "${CELIUMS_BITNET_ENGINE_COMMIT_FULL}" CELIUMS_BITNET_ENGINE_COMMIT_FULL)
-    string(SUBSTRING "${CELIUMS_BITNET_ENGINE_COMMIT_FULL}" 0 9 CELIUMS_BITNET_ENGINE_COMMIT)
-else()
-    execute_process(
-        COMMAND git -C ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/llama.cpp rev-parse --short=9 HEAD
-        OUTPUT_VARIABLE CELIUMS_BITNET_ENGINE_COMMIT
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET)
+set(CELIUMS_BITNET_ENGINE_PIN "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/llama.cpp/ENGINE_COMMIT")
+set(CELIUMS_BITNET_ENGINE_TREE_PIN "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ENGINE_TREE")
+if (NOT EXISTS "${CELIUMS_BITNET_ENGINE_PIN}" OR NOT EXISTS "${CELIUMS_BITNET_ENGINE_TREE_PIN}")
+    message(FATAL_ERROR "Vendored engine provenance files are required")
 endif()
-if (NOT CELIUMS_BITNET_ENGINE_COMMIT)
-    set(CELIUMS_BITNET_ENGINE_COMMIT "unknown")
+file(READ "${CELIUMS_BITNET_ENGINE_PIN}" CELIUMS_BITNET_ENGINE_COMMIT_FULL)
+file(READ "${CELIUMS_BITNET_ENGINE_TREE_PIN}" CELIUMS_BITNET_ENGINE_TREE)
+string(STRIP "${CELIUMS_BITNET_ENGINE_COMMIT_FULL}" CELIUMS_BITNET_ENGINE_COMMIT_FULL)
+string(STRIP "${CELIUMS_BITNET_ENGINE_TREE}" CELIUMS_BITNET_ENGINE_TREE)
+string(LENGTH "${CELIUMS_BITNET_ENGINE_COMMIT_FULL}" CELIUMS_BITNET_ENGINE_COMMIT_LENGTH)
+string(LENGTH "${CELIUMS_BITNET_ENGINE_TREE}" CELIUMS_BITNET_ENGINE_TREE_LENGTH)
+if (NOT CELIUMS_BITNET_ENGINE_COMMIT_LENGTH EQUAL 40 OR
+        NOT CELIUMS_BITNET_ENGINE_COMMIT_FULL MATCHES "^[0-9a-f]+$")
+    message(FATAL_ERROR "3rdparty/llama.cpp/ENGINE_COMMIT must contain a full Git commit")
+endif()
+if (NOT CELIUMS_BITNET_ENGINE_TREE_LENGTH EQUAL 40 OR
+        NOT CELIUMS_BITNET_ENGINE_TREE MATCHES "^[0-9a-f]+$")
+    message(FATAL_ERROR "cmake/ENGINE_TREE must contain a full Git tree hash")
+endif()
+string(SUBSTRING "${CELIUMS_BITNET_ENGINE_COMMIT_FULL}" 0 9 CELIUMS_BITNET_ENGINE_COMMIT)
+
+execute_process(
+    COMMAND git -C "${CMAKE_CURRENT_SOURCE_DIR}" rev-parse --is-inside-work-tree
+    OUTPUT_VARIABLE CELIUMS_BITNET_GIT_WORK_TREE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+execute_process(
+    COMMAND git -C "${CMAKE_CURRENT_SOURCE_DIR}" rev-parse --show-toplevel
+    OUTPUT_VARIABLE CELIUMS_BITNET_GIT_TOPLEVEL
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+if (CELIUMS_BITNET_VERIFY_ENGINE_TREE AND CELIUMS_BITNET_GIT_WORK_TREE STREQUAL "true" AND
+        CELIUMS_BITNET_GIT_TOPLEVEL STREQUAL CMAKE_CURRENT_SOURCE_DIR AND
+        EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/compute-engine-tree.sh")
+    execute_process(
+        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/scripts/compute-engine-tree.sh"
+        OUTPUT_VARIABLE CELIUMS_BITNET_ENGINE_TREE_ACTUAL
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE CELIUMS_BITNET_ENGINE_TREE_RESULT
+        ERROR_QUIET)
+    if (NOT CELIUMS_BITNET_ENGINE_TREE_RESULT EQUAL 0)
+        message(FATAL_ERROR "Unable to validate the vendored engine tree")
+    endif()
+    if (NOT CELIUMS_BITNET_ENGINE_TREE_ACTUAL STREQUAL CELIUMS_BITNET_ENGINE_TREE)
+        message(FATAL_ERROR "Vendored engine tree does not match cmake/ENGINE_TREE")
+    endif()
 endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -38,6 +76,10 @@ endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+if (NOT BUILD_SHARED_LIBS)
+    message(STATUS "Static builds are internal-only; public SDK install rules are disabled")
+endif()
+
 # option list
 option(BITNET_ARM_TL1    "Celiums BitNet: use TL1 on ARM"          OFF)
 option(BITNET_X86_TL2    "Celiums BitNet: use TL2 on x86"          OFF)
@@ -45,6 +87,12 @@ option(CELIUMS_BITNET_STRICT "Preserve the Celiums BitNet numerical contract" ON
 option(CELIUMS_BITNET_EXPERIMENTAL "Build experimental kernels" OFF)
 option(CELIUMS_BITNET_BUILD_SERVER "Build the Celiums BitNet server" ON)
 option(CELIUMS_BITNET_INSTALL_COMPAT "Install llama.cpp compatibility tools and development files" OFF)
+option(CELIUMS_BITNET_VERIFY_ENGINE_TREE "Verify worktree contents against cmake/ENGINE_TREE" OFF)
+set(CELIUMS_BITNET_TEST_MODEL "" CACHE FILEPATH "Strict I2_S model used by integration tests")
+
+if (NOT BUILD_SHARED_LIBS AND CELIUMS_BITNET_INSTALL_COMPAT)
+    message(FATAL_ERROR "Static builds cannot install the public or compatibility SDK")
+endif()
 set(CELIUMS_BITNET_CPU_PROFILE "native" CACHE STRING "CPU profile: native, avx2, or scalar")
 set_property(CACHE CELIUMS_BITNET_CPU_PROFILE PROPERTY STRINGS native avx2 scalar)
 
@@ -63,12 +111,22 @@ endif()
 if (CELIUMS_BITNET_CPU_PROFILE STREQUAL "native")
     set(GGML_NATIVE ON CACHE BOOL "Use the native CPU ISA" FORCE)
 elseif (CELIUMS_BITNET_CPU_PROFILE STREQUAL "avx2")
+    if (NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+        message(FATAL_ERROR "The avx2 CPU profile requires x86_64")
+    endif()
     set(GGML_NATIVE OFF CACHE BOOL "Use the native CPU ISA" FORCE)
     set(GGML_SSE42 ON CACHE BOOL "Enable SSE 4.2" FORCE)
     set(GGML_AVX ON CACHE BOOL "Enable AVX" FORCE)
     set(GGML_AVX2 ON CACHE BOOL "Enable AVX2" FORCE)
     set(GGML_AVX_VNNI OFF CACHE BOOL "Disable AVX-VNNI" FORCE)
     set(GGML_AVX512 OFF CACHE BOOL "Disable AVX-512" FORCE)
+    set(GGML_AVX512_VBMI OFF CACHE BOOL "Disable AVX-512 VBMI" FORCE)
+    set(GGML_AVX512_VNNI OFF CACHE BOOL "Disable AVX-512 VNNI" FORCE)
+    set(GGML_AVX512_BF16 OFF CACHE BOOL "Disable AVX-512 BF16" FORCE)
+    set(GGML_AMX_TILE OFF CACHE BOOL "Disable AMX tile" FORCE)
+    set(GGML_AMX_INT8 OFF CACHE BOOL "Disable AMX INT8" FORCE)
+    set(GGML_AMX_BF16 OFF CACHE BOOL "Disable AMX BF16" FORCE)
+    set(GGML_BMI2 OFF CACHE BOOL "Disable BMI2" FORCE)
     set(GGML_FMA ON CACHE BOOL "Enable FMA" FORCE)
     set(GGML_F16C ON CACHE BOOL "Enable F16C" FORCE)
 elseif (CELIUMS_BITNET_CPU_PROFILE STREQUAL "scalar")
@@ -78,6 +136,12 @@ elseif (CELIUMS_BITNET_CPU_PROFILE STREQUAL "scalar")
     set(GGML_AVX2 OFF CACHE BOOL "Disable AVX2" FORCE)
     set(GGML_AVX_VNNI OFF CACHE BOOL "Disable AVX-VNNI" FORCE)
     set(GGML_AVX512 OFF CACHE BOOL "Disable AVX-512" FORCE)
+    set(GGML_AVX512_VBMI OFF CACHE BOOL "Disable AVX-512 VBMI" FORCE)
+    set(GGML_AVX512_VNNI OFF CACHE BOOL "Disable AVX-512 VNNI" FORCE)
+    set(GGML_AVX512_BF16 OFF CACHE BOOL "Disable AVX-512 BF16" FORCE)
+    set(GGML_AMX_TILE OFF CACHE BOOL "Disable AMX tile" FORCE)
+    set(GGML_AMX_INT8 OFF CACHE BOOL "Disable AMX INT8" FORCE)
+    set(GGML_AMX_BF16 OFF CACHE BOOL "Disable AMX BF16" FORCE)
     set(GGML_FMA OFF CACHE BOOL "Disable FMA" FORCE)
     set(GGML_F16C OFF CACHE BOOL "Disable F16C" FORCE)
     set(GGML_BMI2 OFF CACHE BOOL "Disable BMI2" FORCE)
@@ -108,20 +172,31 @@ endif()
 
 find_package(Threads REQUIRED)
 
-# Inherited llama.cpp server and CLI targets are compatibility-only.
-set(LLAMA_BUILD_SERVER ON CACHE BOOL "Build internal llama.cpp server components" FORCE)
+set(GGML_BLAS OFF CACHE BOOL "Disable unsupported BLAS backend" FORCE)
+set(GGML_CUDA OFF CACHE BOOL "Disable unsupported CUDA backend" FORCE)
+set(GGML_HIP OFF CACHE BOOL "Disable unsupported HIP backend" FORCE)
+set(GGML_METAL OFF CACHE BOOL "Disable unsupported Metal backend" FORCE)
+set(GGML_VULKAN OFF CACHE BOOL "Disable unsupported Vulkan backend" FORCE)
+set(GGML_OPENCL OFF CACHE BOOL "Disable unsupported OpenCL backend" FORCE)
+set(GGML_SYCL OFF CACHE BOOL "Disable unsupported SYCL backend" FORCE)
+set(GGML_CANN OFF CACHE BOOL "Disable unsupported CANN backend" FORCE)
+set(GGML_RPC OFF CACHE BOOL "Disable unsupported RPC backend" FORCE)
+set(GGML_OPENVINO OFF CACHE BOOL "Disable unsupported OpenVINO backend" FORCE)
+set(LLAMA_BUILD_COMMON ON CACHE BOOL "Build internal llama.cpp common library" FORCE)
+set(LLAMA_BUILD_TOOLS ${CELIUMS_BITNET_INSTALL_COMPAT} CACHE BOOL "Build llama.cpp compatibility tools" FORCE)
+set(LLAMA_BUILD_SERVER ${CELIUMS_BITNET_INSTALL_COMPAT} CACHE BOOL "Build llama.cpp compatibility server" FORCE)
+set(LLAMA_BUILD_APP OFF CACHE BOOL "Do not build the llama.cpp unified application" FORCE)
+set(LLAMA_BUILD_UI OFF CACHE BOOL "Do not build the llama.cpp web UI" FORCE)
+set(LLAMA_USE_PREBUILT_UI OFF CACHE BOOL "Do not download the llama.cpp web UI" FORCE)
+set(LLAMA_OPENSSL OFF CACHE BOOL "Disable HTTPS in the private HTTP dependency" FORCE)
 set(LLAMA_TESTS_INSTALL OFF CACHE BOOL "Do not install llama.cpp tests" FORCE)
 set(LLAMA_TOOLS_INSTALL ${CELIUMS_BITNET_INSTALL_COMPAT} CACHE BOOL "Install llama.cpp compatibility tools" FORCE)
 set(CELIUMS_BITNET_ENGINE_INSTALL ${CELIUMS_BITNET_INSTALL_COMPAT} CACHE BOOL "Install llama.cpp engine development files" FORCE)
+set(LLAMA_BUILD_COMMIT ${CELIUMS_BITNET_ENGINE_COMMIT_FULL})
+set(LLAMA_BUILD_NUMBER 0)
 add_subdirectory(3rdparty/llama.cpp)
 add_subdirectory(src)
-if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TOOLS)
-    add_subdirectory(tools)
-endif()
-
-if (NOT TARGET llama-bench-impl)
-    message(FATAL_ERROR "Celiums BitNet Runtime requires LLAMA_BUILD_COMMON=ON and LLAMA_BUILD_TOOLS=ON")
-endif()
+add_subdirectory(tools)
 
 add_dependencies(celiums-runtime-bench celiums-bitnet-runtime)
 
@@ -144,12 +219,23 @@ set_target_properties(celiums-bitnet PROPERTIES
     BUILD_RPATH "$ORIGIN"
     INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}/celiums-bitnet-runtime")
 
+if (BUILD_SHARED_LIBS)
 install(TARGETS celiums-bitnet RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(TARGETS celiums-bitnet-runtime
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/celiums-bitnet-runtime
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/celiums-bitnet-runtime
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/celiums)
+
+add_library(celiums-bitnet-sdk INTERFACE)
+set_target_properties(celiums-bitnet-sdk PROPERTIES EXPORT_NAME BitNetRuntime)
+target_include_directories(celiums-bitnet-sdk INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+target_link_libraries(celiums-bitnet-sdk INTERFACE
+    $<BUILD_INTERFACE:celiums-bitnet-runtime>
+    $<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_LIBDIR}/celiums-bitnet-runtime/${CMAKE_SHARED_LIBRARY_PREFIX}celiums-bitnet-runtime${CMAKE_SHARED_LIBRARY_SUFFIX}>)
+install(TARGETS celiums-bitnet-sdk EXPORT CeliumsBitNetRuntimeTargets)
 
 set(CELIUMS_BITNET_PRIVATE_TARGETS
     celiums-runtime-bench-impl llama llama-common
@@ -190,6 +276,10 @@ install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/CeliumsBitNetRuntimeConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/CeliumsBitNetRuntimeConfigVersion.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CeliumsBitNetRuntime)
+install(EXPORT CeliumsBitNetRuntimeTargets
+    FILE CeliumsBitNetRuntimeTargets.cmake
+    NAMESPACE Celiums::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CeliumsBitNetRuntime)
 
 # install
 
@@ -204,15 +294,21 @@ install(FILES 3rdparty/llama.cpp/vendor/cpp-httplib/LICENSE
     RENAME LICENSE-CPP-HTTPLIB)
 install(FILES 3rdparty/llama.cpp/licenses/LICENSE-jsonhpp
     DESTINATION ${CMAKE_INSTALL_DATADIR}/celiums-bitnet-runtime)
+endif()
 
 if (BUILD_TESTING)
     add_executable(test-celiums-runtime-api tests/test-runtime-api.c)
+    target_compile_definitions(test-celiums-runtime-api PRIVATE
+        CELIUMS_BITNET_TEST_VERSION="${PROJECT_VERSION}")
     target_link_libraries(test-celiums-runtime-api PRIVATE celiums-bitnet-runtime)
     add_test(NAME test-celiums-runtime-api COMMAND test-celiums-runtime-api)
     add_executable(test-celiums-runtime-session tests/test-runtime-session.cpp)
     target_link_libraries(test-celiums-runtime-session PRIVATE celiums-bitnet-runtime)
-    if (EXISTS ${PROJECT_SOURCE_DIR}/models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf)
+    if (NOT CELIUMS_BITNET_TEST_MODEL)
+        set(CELIUMS_BITNET_TEST_MODEL ${PROJECT_SOURCE_DIR}/models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf)
+    endif()
+    if (EXISTS ${CELIUMS_BITNET_TEST_MODEL})
         add_test(NAME test-celiums-runtime-session COMMAND test-celiums-runtime-session
-            ${PROJECT_SOURCE_DIR}/models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf)
+            ${CELIUMS_BITNET_TEST_MODEL})
     endif()
 endif()

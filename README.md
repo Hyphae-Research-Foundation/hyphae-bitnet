@@ -6,7 +6,7 @@
 
 [![License](https://img.shields.io/badge/Celiums%20code-Apache--2.0-blue.svg)](LICENSE)
 [![Upstream](https://img.shields.io/badge/upstream-Microsoft%20BitNet-5C2D91.svg)](UPSTREAM.md)
-[![Version](https://img.shields.io/badge/version-0.2.0-111827.svg)](CHANGES.md)
+[![Version](https://img.shields.io/badge/version-0.2.1-111827.svg)](CHANGES.md)
 [![Status](https://img.shields.io/badge/strict%20I2__S-validated-0F766E.svg)](docs/NUMERICAL_CONTRACT.md)
 
 </div>
@@ -53,7 +53,7 @@ reference and survive architecture-specific tests.
 | SIMD | Added exact AVX2 I8_S activation quantization and corrected non-VNNI overflow before I32 widening. |
 | Matrix kernels | Hardened GEMV/GEMM, scalar fallback, multi-thread execution, zero activations, and multi-plane inputs. |
 | Runtime | Precomputed post-scales, distributed activation quantization by contiguous row ranges, and removed invalid generic BLAS dispatch. |
-| CPU scheduling | Added `--celiums-hybrid-auto`: P-cores for single-token work and the full allowed CPU set for batch work. |
+| CPU scheduling | The inherited engine retains experimental phase-aware hybrid scheduling; it is outside the supported runtime CLI. |
 | Threadpools | Attached separate decode and batch pools to common llama contexts so affinity is effective in CLI and server execution. |
 | Conversion | Unified I2_S packing, fixed offline scale direction, fixed GGUF file type, added quantization metadata, and rejected malformed tensors. |
 | Python tooling | Rebuilt setup, inference, server, and benchmark wrappers with explicit failures and real batch parameters. |
@@ -158,8 +158,8 @@ git clone https://github.com/celiumsai/celiums-bitnet.git
 cd celiums-bitnet
 ```
 
-The engine is vendored in-tree at `3rdparty/llama.cpp`; there are no longer any
-git submodules, so a plain clone is complete and reproducible.
+The engine is vendored in-tree at `3rdparty/llama.cpp`; a plain clone is complete
+and does not contact another source repository.
 
 ### Build Only
 
@@ -167,11 +167,12 @@ git submodules, so a plain clone is complete and reproducible.
 python setup_env.py --build-only --build-server
 ```
 
-The default build includes the `celiums-bitnet` product command, inherited
-engine tools used during the compatibility transition, the Celiums I2_S tests,
-and `celiums-logits-capture` for exactness baselines. A default installation
-exposes only the Celiums command and C header; set
-`CELIUMS_BITNET_INSTALL_COMPAT=ON` to install inherited development tools.
+The default build includes the `celiums-bitnet` product command and Celiums
+support tools. It disables inherited server, application, and Web UI targets,
+so a normal build does not invoke npm or download UI assets. A default shared
+installation exposes only the Celiums command, C header, and runtime library;
+set `CELIUMS_BITNET_INSTALL_COMPAT=ON` to build and install inherited llama.cpp
+tools. Static builds are internal-only and do not install a public SDK.
 
 The supported product entry point is `build/bin/celiums-bitnet`:
 
@@ -217,33 +218,20 @@ python run_inference.py \
   --n-predict 128
 ```
 
-### Hybrid Intel Scheduling
-
-```bash
-python run_inference.py \
-  --model models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf \
-  --prompt "Write a concise technical summary." \
-  --hybrid-auto
-```
-
-`--hybrid-auto` discovers the effective process/cgroup CPU set, uses allowed
-performance cores for single-token work, uses the full allowed set for batch
-work, and attaches separate threadpools with phase-specific affinity. On
-non-hybrid or P-core-restricted systems it safely falls back to the allowed CPU
-set.
-
 ### Run the Server
 
 ```bash
 python run_inference_server.py \
   --model models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf \
   --host 127.0.0.1 \
-  --port 8080 \
-  --hybrid-auto
+  --port 8080
 ```
 
-The wrapper keeps continuous batching enabled. Binding to a non-loopback host
-prints a warning because authentication is not configured by the wrapper.
+Remote binding requires `CELIUMS_BITNET_API_KEY`, `--api-key-file`, or the
+explicit `--allow-unauthenticated-remote` override. `LLAMA_API_KEY` is accepted
+as a migration alias, but unlike the unsafe 0.2.0 precheck it now enforces the
+key on requests. Authentication applies to every HTTP
+endpoint. Continuous batching is not yet implemented.
 
 ### Benchmark
 
@@ -270,17 +258,32 @@ JOBS=8 ./scripts/package-runtime.sh avx2 build-avx2-no-vnni
 JOBS=8 ./scripts/package-runtime.sh scalar build-scalar
 ```
 
-Each run configures a Release build with the selected
+Release packaging is supported on Linux x86_64. `native` is tied to the release
+builder's CPU ISA and is intended for that host class; `avx2` and `scalar` are
+the closed portable profiles. Each run configures a shared
+Release build with the selected
 `CELIUMS_BITNET_CPU_PROFILE`, installs into `stage-<profile>/`, and produces:
 
-- `celiums-bitnet-runtime-0.2.0-linux-x86_64-<profile>.tar.gz` — a `/usr`
-  payload with the runtime binary, server, bench tool, and headers;
+- `celiums-bitnet-runtime-0.2.1-linux-x86_64-<profile>.tar.gz` - a `/usr`
+  payload with the unified `celiums-bitnet` command, its `run`, `serve`,
+  `bench`, `validate`, and `version` subcommands, the C SDK, and private runtime
+  libraries;
 - a matching `.tar.gz.json` manifest recording the product commit, the vendored
   engine snapshot, compiler, platform, and artifact hashes.
 
-Packaging fails closed on a dirty tree unless `ALLOW_DIRTY=1` is set. See
+Release archives and v2 manifests are generated artifacts and remain outside
+Git; publish them together through the release channel. The checked-in 0.2.0
+manifests are retained as historical evidence.
+
+Packaging fails closed on tracked or untracked source changes unless
+`ALLOW_DIRTY=1` is set. Generated `stage-*` directories are ignored. See
 [docs/RUNTIME_PRODUCT.md](docs/RUNTIME_PRODUCT.md) for the product boundary and
 archive layout.
+
+The complete local release gate, including model-backed integration checks, is
+available as `JOBS=2 scripts/validate-release.sh`. It requires the strict I2_S
+model and exactness oracle fixtures, configurable with `CELIUMS_BITNET_TEST_MODEL`,
+`CELIUMS_BITNET_TEST_ORACLE`, and `CELIUMS_BITNET_TEST_ORACLE_SIDECAR`.
 
 ## Validation
 
@@ -344,8 +347,9 @@ tests/                              Python conversion and wrapper tests
 - Full source-checkpoint logits/perplexity comparison remains a release gate
   for broader model compatibility claims.
 - Clone reproducibility depends on the vendored engine tree at
-  `3rdparty/llama.cpp`; its snapshot commit is recorded in
-  `3rdparty/llama.cpp/ENGINE_COMMIT`.
+  `3rdparty/llama.cpp`. Its historical source commit is recorded in
+  `3rdparty/llama.cpp/ENGINE_COMMIT`, and its exact contents are recorded in
+  `cmake/ENGINE_TREE`.
 
 ## Roadmap
 

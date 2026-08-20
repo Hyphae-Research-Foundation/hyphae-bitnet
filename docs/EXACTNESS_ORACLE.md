@@ -7,7 +7,7 @@ selected prompt positions, raw F32 logits, and build/runtime metadata in GGUF.
 ## Build
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLLAMA_BUILD_TOOLS=ON -DLLAMA_BUILD_COMMON=ON
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel --target celiums-logits-capture
 ```
 
@@ -57,8 +57,9 @@ python utils/compare_logits.py \
 ```
 
 The wrapper also writes `captures/reference.gguf.json` with SHA-256 hashes for
-the model, executable, prompt, and capture artifact, plus the root and submodule
-commits and whether the source tree was dirty. Commit that metadata with
+the model, executable, prompt, and capture artifact, plus `product_commit`,
+`engine_commit`, `engine_tree`, and whether the source tree was dirty. Existing
+v1 metadata remains historical evidence; new captures use the v2 schema. Commit that metadata with
 release evidence; large logits captures can remain external artifacts.
 
 ## Compare

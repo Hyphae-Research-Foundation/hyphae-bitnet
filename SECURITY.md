@@ -22,8 +22,13 @@ Center.
 
 ## Deployment Guidance
 
-- Do not expose `llama-server` to untrusted networks without authentication,
-  network isolation, and request limits.
+- `celiums-bitnet serve` and `celiums-runtime-server` reject non-loopback binds
+  unless an API key is configured or `--allow-unauthenticated-remote` is passed.
+  `CELIUMS_BITNET_API_KEY` is canonical. `LLAMA_API_KEY` is accepted for
+  migration, but now enforces authentication rather than repeating the unsafe
+  0.2.0 precheck. Authentication covers every HTTP endpoint.
+- Do not expose the server to untrusted networks without authentication,
+  network isolation, TLS termination, and request limits.
 - Treat model and adapter files as untrusted input.
 - Pin model revisions and verify checksums in production.
 - Run inference services with the least privileges they require.

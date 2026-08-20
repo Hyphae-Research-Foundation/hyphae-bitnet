@@ -28,8 +28,7 @@ class WrapperCommandTests(unittest.TestCase):
     def test_inference_thread_defaults(self):
         args = SimpleNamespace(
             model=Path("model.gguf"), n_predict=32, threads=4, threads_batch=None,
-            prompt="hello world", ctx_size=512, temperature=0.0, cpu_mask=None,
-            hybrid_auto=False, conversation=False,
+            prompt="hello world", ctx_size=512, temperature=0.0,
         )
         with patch.object(inference, "binary_path", return_value=Path("celiums-bitnet")):
             command = inference.build_command(args)
@@ -41,19 +40,17 @@ class WrapperCommandTests(unittest.TestCase):
     def test_inference_separate_threads(self):
         args = SimpleNamespace(
             model=Path("model.gguf"), n_predict=32, threads=6, threads_batch=14,
-            prompt="prompt", ctx_size=512, temperature=0.8, cpu_mask=None,
-            hybrid_auto=False, conversation=False,
+            prompt="prompt", ctx_size=512, temperature=0.8,
         )
         with patch.object(inference, "binary_path", return_value=Path("celiums-bitnet")):
             command = inference.build_command(args)
         self.assertEqual(command[command.index("-tb") + 1], "14")
         self.assertNotIn("--cpu-strict", command)
 
-    def test_server_keeps_continuous_batching(self):
+    def test_server_uses_separate_thread_counts(self):
         args = SimpleNamespace(
             model=Path("model.gguf"), ctx_size=1024, threads=4, threads_batch=12,
-            n_predict=128, temperature=0.8, host="127.0.0.1", port=8080,
-            cpu_mask=None, hybrid_auto=False, prompt=None,
+            host="127.0.0.1", port=8080,
             api_key_file=None, allow_unauthenticated_remote=False,
         )
         with patch.object(server, "binary_path", return_value=Path("celiums-bitnet")):
@@ -61,26 +58,15 @@ class WrapperCommandTests(unittest.TestCase):
         self.assertEqual(command[1], "serve")
         self.assertEqual(command[command.index("-tb") + 1], "12")
 
-    def test_native_run_rejects_unsupported_hybrid_auto(self):
-        args = SimpleNamespace(
-            model=Path("model.gguf"), n_predict=8, threads=2, threads_batch=None,
-            prompt="prompt", ctx_size=128, temperature=0.0, cpu_mask=None,
-            hybrid_auto=True, conversation=False,
-        )
-        with patch.object(inference, "binary_path", return_value=Path("celiums-bitnet")):
-            with self.assertRaisesRegex(ValueError, "not yet available"):
-                inference.build_command(args)
-
-    def test_native_server_rejects_hybrid_auto(self):
+    def test_server_wrapper_defers_bind_policy_to_native_server(self):
         args = SimpleNamespace(
             model=Path("model.gguf"), ctx_size=1024, threads=4, threads_batch=12,
-            n_predict=128, temperature=0.8, host="127.0.0.1", port=8080,
-            cpu_mask=None, hybrid_auto=True, prompt=None,
-            api_key_file=None, allow_unauthenticated_remote=False,
+            host="0.0.0.0", port=8080, api_key_file=None,
+            allow_unauthenticated_remote=False,
         )
         with patch.object(server, "binary_path", return_value=Path("celiums-bitnet")):
-            with self.assertRaisesRegex(ValueError, "not available"):
-                server.build_command(args)
+            command = server.build_command(args)
+        self.assertEqual(command[command.index("--host") + 1], "0.0.0.0")
 
     def test_benchmark_uses_real_batch(self):
         args = SimpleNamespace(
@@ -134,6 +120,23 @@ class WrapperCommandTests(unittest.TestCase):
         self.assertIn("--cpu-strict", command)
         self.assertIn("--cpu-mask-batch", command)
         self.assertIn("--capture-tensor=Qcur-0@ROPE", command)
+
+    def test_release_provenance_is_required_and_version_is_centralized(self):
+        manifest = load_module("celiums_release_manifest", ROOT / "utils" / "release_manifest.py")
+        self.assertEqual(manifest.VERSION, (ROOT / "VERSION").read_text(encoding="utf-8").strip())
+        self.assertEqual(
+            manifest.read_required_hash(ROOT / "3rdparty" / "llama.cpp" / "ENGINE_COMMIT"),
+            (ROOT / "3rdparty" / "llama.cpp" / "ENGINE_COMMIT").read_text(encoding="utf-8").strip(),
+        )
+        self.assertEqual(
+            manifest.read_required_hash(ROOT / "cmake" / "ENGINE_TREE"),
+            (ROOT / "cmake" / "ENGINE_TREE").read_text(encoding="utf-8").strip(),
+        )
+
+    def test_release_manifest_uses_relative_artifact_names(self):
+        manifest = load_module("celiums_release_paths", ROOT / "utils" / "release_manifest.py")
+        self.assertEqual(manifest.display_path(ROOT / "artifact.tar.gz"), "artifact.tar.gz")
+        self.assertEqual(manifest.display_path(Path("/tmp/external-artifact.tar.gz")), "external-artifact.tar.gz")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+ENGINE_COMMIT = ROOT / "3rdparty" / "llama.cpp" / "ENGINE_COMMIT"
+ENGINE_TREE = ROOT / "cmake" / "ENGINE_TREE"
 
 
 def sha256_file(path, chunk_size=8 * 1024 * 1024):
@@ -108,30 +110,36 @@ def main():
     command = build_command(args)
     binary = Path(command[0]).resolve()
     subprocess.run(command, cwd=ROOT, check=True)
+    identity = subprocess.run(
+        [str(binary), "--version"], cwd=ROOT, check=True, capture_output=True, text=True
+    ).stdout
     root_status = subprocess.run(
         ["git", "status", "--porcelain"], cwd=ROOT, check=True, capture_output=True, text=True
     ).stdout
     root_commit = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True, text=True
     ).stdout.strip()
-    submodule_commit = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=ROOT / "3rdparty" / "llama.cpp",
-        check=True, capture_output=True, text=True,
-    ).stdout.strip()
+    product_commit = root_commit[:9]
+    engine_commit = ENGINE_COMMIT.read_text(encoding="utf-8").strip()
+    engine_tree = ENGINE_TREE.read_text(encoding="utf-8").strip()
+    for expected in (product_commit, engine_commit, engine_tree):
+        if expected not in identity:
+            raise RuntimeError("Capture binary provenance does not match the current source tree")
     metadata = {
-        "schema": "celiums-logits-capture-run-v1",
+        "schema": "celiums-logits-capture-run-v2",
         "model": str(args.model),
         "model_sha256": sha256_file(args.model),
         "capture": str(args.output),
         "capture_sha256": sha256_file(args.output),
         "binary": str(binary),
         "binary_sha256": sha256_file(binary),
-        "root_commit": root_commit,
-        "submodule_commit": submodule_commit,
+        "product_commit": root_commit,
+        "engine_commit": engine_commit,
+        "engine_tree": engine_tree,
         "source_dirty": bool(root_status),
         "prompt_sha256": hashlib.sha256(args.prompt.encode("utf-8")).hexdigest(),
-        "positions": args.position or [-1],
-        "tensors": args.tensor,
+        "requested_positions": args.position or [-1],
+        "requested_tensors": args.tensor,
         "command": command,
     }
     args.metadata_output.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")

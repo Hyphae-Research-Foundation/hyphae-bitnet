@@ -111,6 +111,7 @@ typedef bool (*celiums_bitnet_stream_callback)(
 CELIUMS_BITNET_API const char * celiums_bitnet_version(void);
 CELIUMS_BITNET_API const char * celiums_bitnet_product_commit(void);
 CELIUMS_BITNET_API const char * celiums_bitnet_engine_commit(void);
+CELIUMS_BITNET_API const char * celiums_bitnet_engine_tree(void);
 CELIUMS_BITNET_API const char * celiums_bitnet_cpu_profile(void);
 CELIUMS_BITNET_API const char * celiums_bitnet_status_string(celiums_bitnet_status status);
 

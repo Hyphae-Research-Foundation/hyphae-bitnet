@@ -3,11 +3,22 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#endif
+
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -25,6 +36,7 @@ struct server_options {
     int32_t threads = 2;
     int32_t threads_batch = 2;
     std::string api_key;
+    bool allow_unauthenticated_remote = false;
 };
 
 struct server_metrics {
@@ -54,11 +66,52 @@ struct callback_state {
 };
 
 void usage(const char * program) {
-    printf("Usage: %s --model MODEL.gguf [--host 127.0.0.1] [--port 8080]\n", program);
+    printf("Usage: %s --model MODEL.gguf [--host 127.0.0.1] [--port 8080] [options]\n", program);
+    printf("  --api-key KEY                     require an API key\n");
+    printf("  --api-key-file PATH               read the API key from PATH\n");
+    printf("  --allow-unauthenticated-remote    permit a remote bind without authentication\n");
+}
+
+bool is_loopback_host(const std::string & host) {
+    addrinfo hints = {};
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_ADDRCONFIG;
+    addrinfo * addresses = nullptr;
+    if (getaddrinfo(host.c_str(), nullptr, &hints, &addresses) != 0) return false;
+    bool found = false;
+    bool loopback = true;
+    for (addrinfo * address = addresses; address; address = address->ai_next) {
+        found = true;
+        if (address->ai_family == AF_INET) {
+            const auto * ipv4 = reinterpret_cast<const sockaddr_in *>(address->ai_addr);
+            loopback = loopback && (ntohl(ipv4->sin_addr.s_addr) >> 24) == 127;
+        } else if (address->ai_family == AF_INET6) {
+            const auto * ipv6 = reinterpret_cast<const sockaddr_in6 *>(address->ai_addr);
+            loopback = loopback && IN6_IS_ADDR_LOOPBACK(&ipv6->sin6_addr);
+        } else {
+            loopback = false;
+        }
+    }
+    freeaddrinfo(addresses);
+    return found && loopback;
+}
+
+std::string read_api_key(const char * path) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) throw std::runtime_error(std::string("failed to open API key file '") + path + "'");
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+    std::string value = buffer.str();
+    while (!value.empty() && (value.back() == '\n' || value.back() == '\r')) value.pop_back();
+    if (value.empty()) throw std::runtime_error("API key file is empty");
+    return value;
 }
 
 bool parse(int argc, char ** argv, server_options & result) {
-    if (const char * api_key = std::getenv("CELIUMS_BITNET_API_KEY")) {
+    if (const char * api_key = std::getenv("CELIUMS_BITNET_API_KEY"); api_key && api_key[0]) {
+        result.api_key = api_key;
+    } else if (const char * api_key = std::getenv("LLAMA_API_KEY"); api_key && api_key[0]) {
         result.api_key = api_key;
     }
     for (int index = 1; index < argc; ++index) {
@@ -66,6 +119,19 @@ bool parse(int argc, char ** argv, server_options & result) {
         if (argument == "--help" || argument == "-h") {
             usage(argv[0]);
             return false;
+        }
+        if (argument == "--allow-unauthenticated-remote") {
+            result.allow_unauthenticated_remote = true;
+            continue;
+        }
+        const size_t equals = argument.find('=');
+        if (equals != std::string::npos) {
+            const std::string name = argument.substr(0, equals);
+            const std::string value = argument.substr(equals + 1);
+            if (name == "--host") result.host = value;
+            else if (name == "--api-key") result.api_key = value;
+            else return false;
+            continue;
         }
         if (index + 1 >= argc) return false;
         const char * value = argv[++index];
@@ -78,7 +144,20 @@ bool parse(int argc, char ** argv, server_options & result) {
         else if (argument == "--threads" || argument == "-t") result.threads = std::stoi(value);
         else if (argument == "--threads-batch" || argument == "-tb") result.threads_batch = std::stoi(value);
         else if (argument == "--api-key") result.api_key = value;
+        else if (argument == "--api-key-file") result.api_key = read_api_key(value);
         else return false;
+    }
+    if (!is_loopback_host(result.host) && result.api_key.empty() && !result.allow_unauthenticated_remote) {
+        throw std::runtime_error(
+            "refusing unauthenticated remote host '" + result.host +
+            "'; use --api-key, --api-key-file, or --allow-unauthenticated-remote");
+    }
+    if (!result.api_key.empty()) {
+#ifdef _WIN32
+        _putenv_s("CELIUMS_BITNET_API_KEY", result.api_key.c_str());
+#else
+        setenv("CELIUMS_BITNET_API_KEY", result.api_key.c_str(), 1);
+#endif
     }
     return result.model && result.port > 0 && result.port <= 65535 && result.context_size > 0 &&
         result.batch_size > 0 && result.ubatch_size > 0 && result.threads > 0 && result.threads_batch > 0;
@@ -252,8 +331,7 @@ int celiums_runtime_server(int argc, char ** argv) {
     httplib::Server server;
     server.set_pre_routing_handler([&](const httplib::Request & request, httplib::Response & response) {
         response.set_header("X-Celiums-BitNet-Runtime", celiums_bitnet_version());
-        if ((request.path == "/health" || request.path == "/v1/health" || request.path == "/v1/models") ||
-                authorized(request, options.api_key)) {
+        if (authorized(request, options.api_key)) {
             return httplib::Server::HandlerResponse::Unhandled;
         }
         set_error(response, "Invalid API Key", "authentication_error", 401);

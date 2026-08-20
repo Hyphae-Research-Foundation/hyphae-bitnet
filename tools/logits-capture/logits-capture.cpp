@@ -18,6 +18,16 @@
 #include <unordered_set>
 #include <vector>
 
+#ifndef CELIUMS_BITNET_PRODUCT_COMMIT
+#define CELIUMS_BITNET_PRODUCT_COMMIT "unknown"
+#endif
+#ifndef CELIUMS_BITNET_ENGINE_COMMIT
+#define CELIUMS_BITNET_ENGINE_COMMIT "unknown"
+#endif
+#ifndef CELIUMS_BITNET_ENGINE_TREE
+#define CELIUMS_BITNET_ENGINE_TREE "unknown"
+#endif
+
 struct probe_selector {
     std::string name;
     std::string op;
@@ -262,6 +272,9 @@ static void write_capture(
     gguf_set_val_u64(capture.get(), "celiums.logits_capture.model.size", llama_model_size(model));
     gguf_set_val_u64(capture.get(), "celiums.logits_capture.model.parameters", llama_model_n_params(model));
     gguf_set_val_str(capture.get(), "celiums.logits_capture.build.commit", llama_commit());
+    gguf_set_val_str(capture.get(), "celiums.logits_capture.product.commit", CELIUMS_BITNET_PRODUCT_COMMIT);
+    gguf_set_val_str(capture.get(), "celiums.logits_capture.engine.commit", CELIUMS_BITNET_ENGINE_COMMIT);
+    gguf_set_val_str(capture.get(), "celiums.logits_capture.engine.tree", CELIUMS_BITNET_ENGINE_TREE);
     gguf_set_val_i32(capture.get(), "celiums.logits_capture.build.number", llama_build_number());
     gguf_set_val_str(capture.get(), "celiums.logits_capture.build.compiler", llama_compiler());
     gguf_set_val_str(capture.get(), "celiums.logits_capture.build.target", llama_build_target());
@@ -310,6 +323,11 @@ static void write_capture(
 }
 
 int main(int argc, char ** argv) {
+    if (argc == 2 && std::strcmp(argv[1], "--version") == 0) {
+        printf("product_commit=%s\nengine_commit=%s\nengine_tree=%s\n",
+            CELIUMS_BITNET_PRODUCT_COMMIT, CELIUMS_BITNET_ENGINE_COMMIT, CELIUMS_BITNET_ENGINE_TREE);
+        return 0;
+    }
     const char * stage = "argument parsing";
     bool backend_initialized = false;
     try {

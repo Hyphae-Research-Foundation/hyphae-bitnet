@@ -34,17 +34,10 @@ The engine's `ggml/src/ggml-cpu/gemm-config.h` file controls kernel behavior:
 
 Modify these values based on your CPU cache size and architecture for optimal performance. Users can fine-tune performance in the pinned engine source.
 
-### Enabling Embedding Quantization
+### Experimental Embedding Quantization
 
-To use embedding quantization for additional speedup:
-
-**Using setup_env.py:**
-```bash
-python setup_env.py --quant-embd
-```
-This automatically converts embeddings to Q6_K format.
-
-I2_S model conversion is performed directly by
+Embedding quantization is not part of the supported 0.2.1 `setup_env.py` or
+release gate. I2_S model conversion is performed directly by
 `utils/convert-hf-to-gguf-bitnet.py --outtype i2_s`. The inherited selective
 embedding requantization scripts remain experimental until they no longer rely
 on an unregistered `llama-quantize I2_S` mode.

@@ -163,17 +163,21 @@ int celiums_runtime_bench(int argc, char ** argv) {
     }
 
     if (status == CELIUMS_BITNET_STATUS_OK && !prompt_rates.empty()) {
-        printf("{\"build_commit\":\"%s\",\"runtime_version\":\"%s\",\"test\":\"pp%d\","
+        printf("{\"product_commit\":\"%s\",\"engine_commit\":\"%s\",\"engine_tree\":\"%s\","
+               "\"runtime_version\":\"%s\",\"test\":\"pp%d\","
                "\"n_prompt\":%d,\"n_gen\":0,\"n_batch\":%d,\"n_ubatch\":%d,"
                "\"n_threads\":%d,\"avg_ts\":%.6f}\n",
-               celiums_bitnet_engine_commit(), celiums_bitnet_version(), benchmark.prompt_tokens,
+               celiums_bitnet_product_commit(), celiums_bitnet_engine_commit(), celiums_bitnet_engine_tree(),
+               celiums_bitnet_version(), benchmark.prompt_tokens,
                benchmark.prompt_tokens, benchmark.batch, benchmark.ubatch, benchmark.threads, average(prompt_rates));
     }
     if (status == CELIUMS_BITNET_STATUS_OK && !decode_rates.empty()) {
-        printf("{\"build_commit\":\"%s\",\"runtime_version\":\"%s\",\"test\":\"tg%d\","
+        printf("{\"product_commit\":\"%s\",\"engine_commit\":\"%s\",\"engine_tree\":\"%s\","
+               "\"runtime_version\":\"%s\",\"test\":\"tg%d\","
                "\"n_prompt\":0,\"n_gen\":%d,\"n_batch\":%d,\"n_ubatch\":%d,"
                "\"n_threads\":%d,\"avg_ts\":%.6f}\n",
-               celiums_bitnet_engine_commit(), celiums_bitnet_version(), benchmark.generated_tokens,
+               celiums_bitnet_product_commit(), celiums_bitnet_engine_commit(), celiums_bitnet_engine_tree(),
+               celiums_bitnet_version(), benchmark.generated_tokens,
                benchmark.generated_tokens, benchmark.batch, benchmark.ubatch, benchmark.threads, average(decode_rates));
     }
 

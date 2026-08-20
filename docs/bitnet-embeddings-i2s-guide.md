@@ -1,5 +1,9 @@
 # BitNet-Embeddings-0.6B/270M: I2_S Conversion and Inference Optimization Guide
 
+> Historical and experimental document. Embedding conversion, external clone
+> instructions, and the former llama.cpp submodule workflow are not part of the
+> Celiums BitNet Runtime 0.2.1 supported product or release gate.
+
 ## 1. Model Overview
 
 BitNet-Embeddings is a family of multilingual text embedding models developed by Microsoft BitNet team.

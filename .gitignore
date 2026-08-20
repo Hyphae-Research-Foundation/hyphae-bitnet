@@ -15,6 +15,7 @@
 *.lastModified
 *.log
 *.tar.gz
+celiums-bitnet-runtime-*.tar.gz.json
 *.metallib
 *.o
 *.so
@@ -23,6 +24,9 @@
 # IDE / OS
 
 .cache/
+.container-verify/
+.package-*-build/
+.verify-*/
 .ccls-cache/
 .direnv/
 .DS_Store
@@ -46,3 +50,4 @@ poetry.toml
 
 build*/
 logs/
+stage-*/
