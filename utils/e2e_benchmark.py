@@ -1,5 +1,6 @@
 import argparse
 import platform
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -9,18 +10,21 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def benchmark_binary(build_dir):
-    candidates = [build_dir / "bin" / "llama-bench"]
+    candidates = [build_dir / "bin" / "celiums-bitnet"]
     if platform.system() == "Windows":
-        candidates.insert(0, build_dir / "bin" / "Release" / "llama-bench.exe")
+        candidates.insert(0, build_dir / "bin" / "Release" / "celiums-bitnet.exe")
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    raise FileNotFoundError("llama-bench not found")
+    installed = shutil.which("celiums-bitnet")
+    if installed:
+        return Path(installed)
+    raise FileNotFoundError("celiums-bitnet not found")
 
 
 def build_command(args):
     command = [
-        str(benchmark_binary(args.build_dir)),
+        str(benchmark_binary(args.build_dir)), "bench",
         "-m", str(args.model),
         "-p", str(args.n_prompt),
         "-n", str(args.n_token),

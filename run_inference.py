@@ -1,5 +1,6 @@
 import argparse
 import platform
+import shutil
 import signal
 import subprocess
 import sys
@@ -9,20 +10,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 
-def binary_path(name):
-    candidates = [ROOT / "build" / "bin" / name]
+def binary_path():
+    candidates = [ROOT / "build" / "bin" / "celiums-bitnet"]
     if platform.system() == "Windows":
-        candidates.insert(0, ROOT / "build" / "bin" / "Release" / f"{name}.exe")
+        candidates.insert(0, ROOT / "build" / "bin" / "Release" / "celiums-bitnet.exe")
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    raise FileNotFoundError(f"{name} was not found; build Celiums BitNet first")
+    installed = shutil.which("celiums-bitnet")
+    if installed:
+        return Path(installed)
+    raise FileNotFoundError("celiums-bitnet was not found; build or install Celiums BitNet Runtime first")
 
 
 def build_command(args):
     threads_batch = args.threads_batch if args.threads_batch is not None else args.threads
     command = [
-        str(binary_path("llama-cli")),
+        str(binary_path()), "run",
         "-m", str(args.model),
         "-n", str(args.n_predict),
         "-t", str(args.threads),
@@ -50,7 +54,7 @@ def parse_args():
     parser.add_argument("-tb", "--threads-batch", "--threads-prefill", type=int)
     parser.add_argument("-c", "--ctx-size", type=int, default=2048)
     parser.add_argument("-temp", "--temperature", type=float, default=0.8)
-    parser.add_argument("--cpu-mask", help="CPU affinity mask passed to llama-cli")
+    parser.add_argument("--cpu-mask", help="CPU affinity mask passed to the runtime engine")
     parser.add_argument("--hybrid-auto", action="store_true", help="Use Celiums phase-aware hybrid CPU defaults")
     parser.add_argument("-cnv", "--conversation", action="store_true")
     return parser.parse_args()

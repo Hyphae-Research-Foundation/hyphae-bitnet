@@ -31,8 +31,9 @@ class WrapperCommandTests(unittest.TestCase):
             prompt="hello world", ctx_size=512, temperature=0.0, cpu_mask=None,
             hybrid_auto=False, conversation=False,
         )
-        with patch.object(inference, "binary_path", return_value=Path("llama-cli")):
+        with patch.object(inference, "binary_path", return_value=Path("celiums-bitnet")):
             command = inference.build_command(args)
+        self.assertEqual(command[1], "run")
         self.assertEqual(command[command.index("-t") + 1], "4")
         self.assertEqual(command[command.index("-tb") + 1], "4")
         self.assertIn("hello world", command)
@@ -43,7 +44,7 @@ class WrapperCommandTests(unittest.TestCase):
             prompt="prompt", ctx_size=512, temperature=0.8, cpu_mask="0x3f",
             hybrid_auto=False, conversation=True,
         )
-        with patch.object(inference, "binary_path", return_value=Path("llama-cli")):
+        with patch.object(inference, "binary_path", return_value=Path("celiums-bitnet")):
             command = inference.build_command(args)
         self.assertEqual(command[command.index("-tb") + 1], "14")
         self.assertIn("--cpu-strict", command)
@@ -54,9 +55,11 @@ class WrapperCommandTests(unittest.TestCase):
             model=Path("model.gguf"), ctx_size=1024, threads=4, threads_batch=12,
             n_predict=128, temperature=0.8, host="127.0.0.1", port=8080,
             cpu_mask=None, hybrid_auto=False, prompt=None,
+            api_key_file=None, allow_unauthenticated_remote=False,
         )
-        with patch.object(server, "binary_path", return_value=Path("llama-server")):
+        with patch.object(server, "binary_path", return_value=Path("celiums-bitnet")):
             command = server.build_command(args)
+        self.assertEqual(command[1], "serve")
         self.assertIn("-cb", command)
         self.assertEqual(command[command.index("-tb") + 1], "12")
 
@@ -66,7 +69,7 @@ class WrapperCommandTests(unittest.TestCase):
             prompt="prompt", ctx_size=128, temperature=0.0, cpu_mask=None,
             hybrid_auto=True, conversation=False,
         )
-        with patch.object(inference, "binary_path", return_value=Path("llama-cli")):
+        with patch.object(inference, "binary_path", return_value=Path("celiums-bitnet")):
             command = inference.build_command(args)
         self.assertIn("--celiums-hybrid-auto", command)
 
@@ -75,8 +78,9 @@ class WrapperCommandTests(unittest.TestCase):
             model=Path("model.gguf"), ctx_size=1024, threads=4, threads_batch=12,
             n_predict=128, temperature=0.8, host="127.0.0.1", port=8080,
             cpu_mask=None, hybrid_auto=True, prompt=None,
+            api_key_file=None, allow_unauthenticated_remote=False,
         )
-        with patch.object(server, "binary_path", return_value=Path("llama-server")):
+        with patch.object(server, "binary_path", return_value=Path("celiums-bitnet")):
             command = server.build_command(args)
         self.assertIn("--celiums-hybrid-auto", command)
         self.assertGreater(command.index("--celiums-hybrid-auto"), command.index("-tb"))
@@ -87,8 +91,9 @@ class WrapperCommandTests(unittest.TestCase):
             n_token=128, batch=256, ubatch=64, threads=8, repetitions=5,
             output="jsonl", cpu_mask="0xff",
         )
-        with patch.object(benchmark, "benchmark_binary", return_value=Path("llama-bench")):
+        with patch.object(benchmark, "benchmark_binary", return_value=Path("celiums-bitnet")):
             command = benchmark.build_command(args)
+        self.assertEqual(command[1], "bench")
         self.assertEqual(command[command.index("-b") + 1], "256")
         self.assertEqual(command[command.index("-ub") + 1], "64")
         self.assertNotEqual(command[command.index("-b") + 1], "1")

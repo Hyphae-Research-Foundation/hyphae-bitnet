@@ -1,6 +1,6 @@
 <div align="center">
 
-# Celiums BitNet
+# Celiums BitNet Runtime
 
 ### Correctness-first 1.58-bit inference, hardened and tuned for production CPUs
 
@@ -164,8 +164,22 @@ cd celiums-bitnet
 python setup_env.py --build-only --build-server
 ```
 
-The default build includes `llama-bench`, `llama-cli`, `llama-server`, and the
-Celiums I2_S tests, plus `celiums-logits-capture` for exactness baselines.
+The default build includes the `celiums-bitnet` product command, inherited
+engine tools used during the compatibility transition, the Celiums I2_S tests,
+and `celiums-logits-capture` for exactness baselines. A default installation
+exposes only the Celiums command and C header; set
+`CELIUMS_BITNET_INSTALL_COMPAT=ON` to install inherited development tools.
+
+The supported product entry point is `build/bin/celiums-bitnet`:
+
+```bash
+build/bin/celiums-bitnet version
+build/bin/celiums-bitnet validate --model models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf
+build/bin/celiums-bitnet run --model models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf --prompt "Hello"
+```
+
+See [docs/RUNTIME_PRODUCT.md](docs/RUNTIME_PRODUCT.md) for the product boundary,
+experimental C API, installation layout, and compatibility policy.
 
 ### Download, Build, and Convert
 

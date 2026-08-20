@@ -1,0 +1,16 @@
+@PACKAGE_INIT@
+
+find_library(CELIUMS_BITNET_RUNTIME_LIBRARY
+    NAMES celiums-bitnet-runtime
+    HINTS "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_LIBDIR@/celiums-bitnet-runtime"
+    NO_DEFAULT_PATH
+    REQUIRED)
+
+if (NOT TARGET Celiums::BitNetRuntime)
+    add_library(Celiums::BitNetRuntime SHARED IMPORTED)
+    set_target_properties(Celiums::BitNetRuntime PROPERTIES
+        IMPORTED_LOCATION "${CELIUMS_BITNET_RUNTIME_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_INCLUDEDIR@")
+endif()
+
+check_required_components(CeliumsBitNetRuntime)

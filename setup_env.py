@@ -111,6 +111,7 @@ def configure_and_build(args, arch):
         f"-DCMAKE_CXX_COMPILER={cxx_compiler}",
         "-DLLAMA_BUILD_TOOLS=ON",
         "-DLLAMA_BUILD_COMMON=ON",
+        f"-DCELIUMS_BITNET_CPU_PROFILE={args.cpu_profile}",
         f"-DLLAMA_BUILD_EXAMPLES={'ON' if args.build_examples else 'OFF'}",
         f"-DCELIUMS_BITNET_BUILD_SERVER={'ON' if args.build_server else 'OFF'}",
         f"-DLLAMA_BUILD_TESTS={'ON' if args.build_tests else 'OFF'}",
@@ -118,11 +119,11 @@ def configure_and_build(args, arch):
         f"-DBITNET_X86_TL2={'ON' if arch == 'x86_64' and args.quant_type == 'tl2' else 'OFF'}",
     ]
     run_command(configure, args.log_dir / "configure.log")
-    targets = ["llama-bench", "celiums-logits-capture"]
+    targets = ["celiums-bitnet", "celiums-logits-capture"]
     if args.build_tests:
         targets.extend(["test-quantize-fns", "test-i2s-mul-mat", "test-celiums-hybrid"])
     if args.build_server:
-        targets.extend(["llama-cli", "llama-server"])
+        targets.extend(["llama-cli"])
     run_command(
         [cmake, "--build", str(args.build_dir), "--config", args.build_type,
          "--parallel", str(args.jobs), "--target", *targets],
@@ -186,6 +187,7 @@ def parse_args():
     parser.add_argument("--build-server", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--build-examples", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--build-type", default="Release")
+    parser.add_argument("--cpu-profile", choices=("native", "avx2", "scalar"), default="native")
     parser.add_argument("--jobs", type=int, default=max(1, os.cpu_count() or 1))
     parser.add_argument("--c-compiler")
     parser.add_argument("--cxx-compiler")

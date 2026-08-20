@@ -1,6 +1,7 @@
 import argparse
 import ipaddress
 import platform
+import shutil
 import signal
 import subprocess
 import sys
@@ -11,19 +12,22 @@ ROOT = Path(__file__).resolve().parent
 
 
 def binary_path():
-    candidates = [ROOT / "build" / "bin" / "llama-server"]
+    candidates = [ROOT / "build" / "bin" / "celiums-bitnet"]
     if platform.system() == "Windows":
-        candidates.insert(0, ROOT / "build" / "bin" / "Release" / "llama-server.exe")
+        candidates.insert(0, ROOT / "build" / "bin" / "Release" / "celiums-bitnet.exe")
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    raise FileNotFoundError("llama-server was not found; build Celiums BitNet first")
+    installed = shutil.which("celiums-bitnet")
+    if installed:
+        return Path(installed)
+    raise FileNotFoundError("celiums-bitnet was not found; build or install Celiums BitNet Runtime first")
 
 
 def build_command(args):
     threads_batch = args.threads_batch if args.threads_batch is not None else args.threads
     command = [
-        str(binary_path()),
+        str(binary_path()), "serve",
         "-m", str(args.model),
         "-c", str(args.ctx_size),
         "-t", str(args.threads),
@@ -41,11 +45,15 @@ def build_command(args):
         command.append("--celiums-hybrid-auto")
     if args.prompt:
         command.extend(["-p", args.prompt])
+    if args.api_key_file:
+        command.extend(["--api-key-file", str(args.api_key_file)])
+    if args.allow_unauthenticated_remote:
+        command.append("--allow-unauthenticated-remote")
     return command
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run the Celiums BitNet llama.cpp server wrapper")
+    parser = argparse.ArgumentParser(description="Run the Celiums BitNet Runtime server")
     parser.add_argument("-m", "--model", type=Path, required=True)
     parser.add_argument("-p", "--prompt")
     parser.add_argument("-n", "--n-predict", type=int, default=4096)
@@ -57,6 +65,8 @@ def parse_args():
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--cpu-mask")
     parser.add_argument("--hybrid-auto", action="store_true", help="Use Celiums phase-aware hybrid CPU defaults")
+    parser.add_argument("--api-key-file", type=Path)
+    parser.add_argument("--allow-unauthenticated-remote", action="store_true")
     return parser.parse_args()
 
 
@@ -72,9 +82,9 @@ if __name__ == "__main__":
             is_loopback = ipaddress.ip_address(args.host).is_loopback
         except ValueError:
             is_loopback = args.host.lower() == "localhost"
-        if not is_loopback:
-            print("Warning: llama-server has no authentication configured by this wrapper.", file=sys.stderr)
+        if not is_loopback and not args.api_key_file and not args.allow_unauthenticated_remote:
+            raise RuntimeError("Remote binding requires --api-key-file or --allow-unauthenticated-remote")
         subprocess.run(build_command(args), cwd=ROOT, check=True)
-    except (OSError, subprocess.CalledProcessError) as error:
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"Server failed: {error}", file=sys.stderr)
         sys.exit(1)

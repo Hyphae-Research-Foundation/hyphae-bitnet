@@ -15,10 +15,16 @@ Celiums-authored modifications, documentation, tests, build integration, and
 tooling are Copyright 2026 Celiums Solutions LLC and are licensed under the
 Apache License, Version 2.0, found in LICENSE.
 
+The `3rdparty/llama.cpp` runtime and Celiums modifications made within that
+repository are distributed under its MIT License. The Apache-2.0 grant above
+does not replace the runtime's MIT terms.
+
 Microsoft and the original contributors retain copyright in upstream code.
 Microsoft BitNet portions retain the MIT terms reproduced in LICENSE-MIT.
 The llama.cpp dependency and third-party components retain their respective
 licenses and attribution notices.
+The experimental GPU sources derived from xFormers retain the BSD 3-Clause
+terms reproduced in LICENSE-BSD-3-Clause.
 
 Celiums BitNet is not affiliated with, sponsored by, endorsed by, or supported
 by Microsoft. Microsoft, BitNet, Hugging Face, model names, and other
