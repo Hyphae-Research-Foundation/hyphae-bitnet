@@ -145,7 +145,7 @@ install(TARGETS celiums-bitnet-runtime
     PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/celiums)
 
 set(CELIUMS_BITNET_PRIVATE_TARGETS
-    celiums-runtime-bench-impl llama
+    celiums-runtime-bench-impl llama llama-common
     ggml ggml-base ggml-cpu)
 if (CELIUMS_BITNET_BUILD_SERVER)
     list(APPEND CELIUMS_BITNET_PRIVATE_TARGETS celiums-runtime-server-impl)
