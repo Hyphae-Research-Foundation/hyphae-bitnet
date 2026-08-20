@@ -23,6 +23,12 @@ model chat template, exports Prometheus metrics at `/metrics`, and cancels
 generation when a streaming client disconnects. Continuous batching remains
 explicit follow-up work rather than being silently emulated.
 
+`celiums-runtime-gateway` is an optional separate Rust process. It composes the
+loopback native server with authenticated Hyphae UDS for RAG, memory, receipts,
+registry/evidence, hybrid retrieval, and proofs. It does not expand the runtime
+C ABI and does not link Hyphae into llama.cpp or GGML. See
+[LOCAL_AI_GATEWAY.md](LOCAL_AI_GATEWAY.md).
+
 `serve` refuses non-loopback hosts unless an API key is configured or the
 operator explicitly passes `--allow-unauthenticated-remote`.
 Set `CELIUMS_BITNET_BUILD_SERVER=OFF` to omit the public `serve` subcommand.
@@ -72,6 +78,8 @@ implemented. TL1 and TL2 require `CELIUMS_BITNET_EXPERIMENTAL=ON`.
 The default installation contains:
 
 - `bin/celiums-bitnet`.
+- `bin/celiums-runtime-gateway`, `bin/celiums-hyphae-sidecar`, and
+  `bin/celiums-runtime-mcp` in release packages or gateway-enabled builds.
 - `include/celiums/bitnet_runtime.h`.
 - `lib*/celiums-bitnet-runtime/` with the public library and private engine.
 - Apache-2.0, MIT, BSD-3-Clause, and attribution notices.
@@ -90,6 +98,8 @@ checks are a separate release gate. `scripts/package-runtime.sh` creates a Linux
 x86_64 profile-specific
 archive and `utils/release_manifest.py` records product/engine commits,
 compiler, platform, profile, model hash when supplied, and artifact hashes.
+Gateway-enabled manifests also record the Rust compiler. Hyphae is pinned by
+exact Git commit in the gateway lockfile.
 
 The engine is vendored in-tree at `3rdparty/llama.cpp` (single-repository
 layout). `3rdparty/llama.cpp/ENGINE_COMMIT` records the historical engine commit

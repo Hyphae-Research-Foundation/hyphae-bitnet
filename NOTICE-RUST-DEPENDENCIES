@@ -1,0 +1,6 @@
+Celiums Runtime Gateway dependency notice
+
+The exact Rust dependency closure is recorded in Cargo.lock. Complete
+dependency copyright notices and license texts are bundled in
+THIRD_PARTY_LICENSES.html. Third-party copyrights and licenses remain with
+their respective authors.

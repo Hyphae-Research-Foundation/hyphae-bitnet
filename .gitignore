@@ -51,3 +51,5 @@ poetry.toml
 build*/
 logs/
 stage-*/
+/tools/runtime-gateway/target/
+/tools/runtime-gateway/target-*/

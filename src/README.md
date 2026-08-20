@@ -36,7 +36,7 @@ Modify these values based on your CPU cache size and architecture for optimal pe
 
 ### Experimental Embedding Quantization
 
-Embedding quantization is not part of the supported 0.2.1 `setup_env.py` or
+Embedding quantization is not part of the supported 0.3.0 `setup_env.py` or
 release gate. I2_S model conversion is performed directly by
 `utils/convert-hf-to-gguf-bitnet.py --outtype i2_s`. The inherited selective
 embedding requantization scripts remain experimental until they no longer rely

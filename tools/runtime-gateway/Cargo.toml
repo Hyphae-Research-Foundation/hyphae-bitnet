@@ -1,0 +1,76 @@
+[package]
+name = "celiums-runtime-gateway"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.97"
+license = "Apache-2.0"
+description = "Local, verifiable RAG and evidence gateway for Celiums BitNet and Hyphae"
+publish = false
+
+[dependencies]
+async-stream = "0.3.6"
+axum = { version = "0.8.4", features = ["json", "macros"] }
+bytes = "1.10.1"
+clap = { version = "4.5.46", features = ["derive", "env"] }
+futures-util = "0.3.31"
+hex = "0.4.3"
+libc = "0.2.175"
+hyphae-client = { git = "https://github.com/celiumsai/hyphae.git", rev = "0471ae25b263fd506da1578068ec57429a6783de" }
+hyphae-native-catalog = { git = "https://github.com/celiumsai/hyphae.git", rev = "0471ae25b263fd506da1578068ec57429a6783de" }
+hyphae-native-daemon = { git = "https://github.com/celiumsai/hyphae.git", rev = "0471ae25b263fd506da1578068ec57429a6783de" }
+hyphae-native-product = { git = "https://github.com/celiumsai/hyphae.git", rev = "0471ae25b263fd506da1578068ec57429a6783de" }
+hyphae-native-types = { git = "https://github.com/celiumsai/hyphae.git", rev = "0471ae25b263fd506da1578068ec57429a6783de" }
+reqwest = { version = "0.12.23", default-features = false, features = ["json", "rustls-tls", "stream"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.143"
+sha2 = "0.10.9"
+subtle = "2.6.1"
+thiserror = "2.0.16"
+tokio = { version = "1.47.1", features = ["fs", "io-std", "io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tower-http = { version = "0.6.6", features = ["catch-panic", "limit", "request-id", "trace"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt", "json"] }
+uuid = { version = "1.18.0", features = ["v4", "v7"] }
+
+[dev-dependencies]
+tempfile = "3.21.0"
+tower = { version = "0.5.2", features = ["util"] }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "symbols"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+too_many_lines = "allow"
+too_many_arguments = "allow"
+missing_errors_doc = "allow"
+result_large_err = "allow"
+type_complexity = "allow"
+needless_pass_by_value = "allow"
+unused_self = "allow"
+cast_possible_truncation = "allow"
+unnecessary_wraps = "allow"
+large_enum_variant = "allow"
+
+[[bin]]
+name = "celiums-runtime-gateway"
+path = "src/main.rs"
+
+[[bin]]
+name = "celiums-hyphae-sidecar"
+path = "src/bin/celiums-hyphae-sidecar.rs"
+
+[[bin]]
+name = "celiums-runtime-mcp"
+path = "src/bin/celiums-runtime-mcp.rs"
