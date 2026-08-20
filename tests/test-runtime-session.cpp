@@ -59,6 +59,14 @@ int main(int argc, char ** argv) {
     if (celiums_bitnet_session_copy_logits(session, logits.data(), &logits_count) != CELIUMS_BITNET_STATUS_OK) return 1;
     for (float value : logits) if (!std::isfinite(value)) return 1;
 
+    const celiums_bitnet_chat_message messages[] = {{"user", "Hello"}};
+    size_t chat_size = 0;
+    status = celiums_bitnet_model_apply_chat_template(model, messages, 1, true, nullptr, &chat_size);
+    if (status != CELIUMS_BITNET_STATUS_BUFFER_TOO_SMALL || chat_size == 0) return 1;
+    std::vector<char> chat(chat_size);
+    status = celiums_bitnet_model_apply_chat_template(model, messages, 1, true, chat.data(), &chat_size);
+    if (status != CELIUMS_BITNET_STATUS_OK || std::strstr(chat.data(), "Hello") == nullptr) return 1;
+
     if (celiums_bitnet_request_create(session, &request) != CELIUMS_BITNET_STATUS_OK) return 1;
     auto generation = celiums_bitnet_generation_default_options();
     generation.max_tokens = 4;

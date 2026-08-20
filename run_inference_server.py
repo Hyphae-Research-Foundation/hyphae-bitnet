@@ -32,19 +32,11 @@ def build_command(args):
         "-c", str(args.ctx_size),
         "-t", str(args.threads),
         "-tb", str(threads_batch),
-        "-n", str(args.n_predict),
-        "-ngl", "0",
-        "--temp", str(args.temperature),
         "--host", args.host,
         "--port", str(args.port),
-        "-cb",
     ]
-    if args.cpu_mask:
-        command.extend(["-C", args.cpu_mask, "--cpu-strict", "1"])
-    elif args.hybrid_auto:
-        command.append("--celiums-hybrid-auto")
-    if args.prompt:
-        command.extend(["-p", args.prompt])
+    if args.cpu_mask or args.hybrid_auto or args.prompt:
+        raise ValueError("CPU masks, hybrid-auto, and a server-level prompt are not available in the native server")
     if args.api_key_file:
         command.extend(["--api-key-file", str(args.api_key_file)])
     if args.allow_unauthenticated_remote:
@@ -85,6 +77,6 @@ if __name__ == "__main__":
         if not is_loopback and not args.api_key_file and not args.allow_unauthenticated_remote:
             raise RuntimeError("Remote binding requires --api-key-file or --allow-unauthenticated-remote")
         subprocess.run(build_command(args), cwd=ROOT, check=True)
-    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"Server failed: {error}", file=sys.stderr)
         sys.exit(1)

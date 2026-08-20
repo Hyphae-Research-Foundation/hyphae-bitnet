@@ -220,6 +220,38 @@ class RuntimeProductTests(unittest.TestCase):
                 body = json.load(response)
             self.assertEqual(body["object"], "text_completion")
             self.assertEqual(body["choices"][0]["text"], ", I")
+
+            stream_request = urllib.request.Request(
+                f"http://127.0.0.1:{port}/v1/completions",
+                data=json.dumps(
+                    {"prompt": "Hello", "max_tokens": 2, "temperature": 0, "stream": True}
+                ).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(stream_request, timeout=120) as response:
+                stream_body = response.read().decode()
+                self.assertEqual(response.headers.get_content_type(), "text/event-stream")
+            events = [line[6:] for line in stream_body.splitlines() if line.startswith("data: ")]
+            self.assertEqual(events[-1], "[DONE]")
+            chunks = [json.loads(event) for event in events[:-1]]
+            text = "".join(choice["choices"][0]["text"] for choice in chunks)
+            self.assertEqual(text, ", I")
+
+            chat_request = urllib.request.Request(
+                f"http://127.0.0.1:{port}/v1/chat/completions",
+                data=json.dumps(
+                    {"messages": [{"role": "user", "content": "Hello"}], "max_tokens": 0}
+                ).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(chat_request, timeout=120) as response:
+                chat_body = json.load(response)
+            self.assertEqual(chat_body["object"], "chat.completion")
+
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics", timeout=10) as response:
+                metrics = response.read().decode()
+            self.assertIn("celiums_bitnet_http_requests_total 3", metrics)
+            self.assertIn("celiums_bitnet_completions_total 3", metrics)
         finally:
             process.terminate()
             try:

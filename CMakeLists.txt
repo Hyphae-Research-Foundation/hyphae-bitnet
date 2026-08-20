@@ -73,6 +73,7 @@ elseif (CELIUMS_BITNET_CPU_PROFILE STREQUAL "scalar")
     set(GGML_AVX512 OFF CACHE BOOL "Disable AVX-512" FORCE)
     set(GGML_FMA OFF CACHE BOOL "Disable FMA" FORCE)
     set(GGML_F16C OFF CACHE BOOL "Disable F16C" FORCE)
+    set(GGML_BMI2 OFF CACHE BOOL "Disable BMI2" FORCE)
 endif()
 
 
@@ -144,8 +145,11 @@ install(TARGETS celiums-bitnet-runtime
     PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/celiums)
 
 set(CELIUMS_BITNET_PRIVATE_TARGETS
-    celiums-runtime-bench-impl celiums-runtime-server-impl llama
+    celiums-runtime-bench-impl llama
     ggml ggml-base ggml-cpu)
+if (CELIUMS_BITNET_BUILD_SERVER)
+    list(APPEND CELIUMS_BITNET_PRIVATE_TARGETS celiums-runtime-server-impl)
+endif()
 if (NOT CELIUMS_BITNET_INSTALL_COMPAT)
     set_target_properties(llama ggml PROPERTIES PUBLIC_HEADER "")
     if (TARGET mtmd)

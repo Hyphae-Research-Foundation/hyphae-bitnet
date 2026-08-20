@@ -59,7 +59,6 @@ class WrapperCommandTests(unittest.TestCase):
         with patch.object(server, "binary_path", return_value=Path("celiums-bitnet")):
             command = server.build_command(args)
         self.assertEqual(command[1], "serve")
-        self.assertIn("-cb", command)
         self.assertEqual(command[command.index("-tb") + 1], "12")
 
     def test_native_run_rejects_unsupported_hybrid_auto(self):
@@ -72,7 +71,7 @@ class WrapperCommandTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not yet available"):
                 inference.build_command(args)
 
-    def test_server_hybrid_auto_is_forwarded(self):
+    def test_native_server_rejects_hybrid_auto(self):
         args = SimpleNamespace(
             model=Path("model.gguf"), ctx_size=1024, threads=4, threads_batch=12,
             n_predict=128, temperature=0.8, host="127.0.0.1", port=8080,
@@ -80,9 +79,8 @@ class WrapperCommandTests(unittest.TestCase):
             api_key_file=None, allow_unauthenticated_remote=False,
         )
         with patch.object(server, "binary_path", return_value=Path("celiums-bitnet")):
-            command = server.build_command(args)
-        self.assertIn("--celiums-hybrid-auto", command)
-        self.assertGreater(command.index("--celiums-hybrid-auto"), command.index("-tb"))
+            with self.assertRaisesRegex(ValueError, "not available"):
+                server.build_command(args)
 
     def test_benchmark_uses_real_batch(self):
         args = SimpleNamespace(

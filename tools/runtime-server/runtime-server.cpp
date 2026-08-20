@@ -3,8 +3,10 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -23,6 +25,32 @@ struct server_options {
     int32_t threads = 2;
     int32_t threads_batch = 2;
     std::string api_key;
+};
+
+struct server_metrics {
+    std::atomic<uint64_t> requests { 0 };
+    std::atomic<uint64_t> completions { 0 };
+    std::atomic<uint64_t> failures { 0 };
+    std::atomic<uint64_t> cancelled { 0 };
+    std::atomic<uint64_t> generated_tokens { 0 };
+    std::atomic<uint64_t> active { 0 };
+};
+
+struct generation_state {
+    celiums_bitnet_session * session = nullptr;
+    celiums_bitnet_request * request = nullptr;
+    celiums_bitnet_generation_result result = {};
+    celiums_bitnet_status status = CELIUMS_BITNET_STATUS_OK;
+    std::string text;
+};
+
+struct callback_state {
+    generation_state * generation;
+    httplib::DataSink * sink = nullptr;
+    std::function<bool()> connection_closed;
+    std::string id;
+    bool chat = false;
+    bool sent_role = false;
 };
 
 void usage(const char * program) {
@@ -70,14 +98,125 @@ void set_json(httplib::Response & response, const json & body, int status = 200)
     response.set_content(body.dump(), "application/json; charset=utf-8");
 }
 
-struct stream_state {
-    json chunks = json::array();
-};
+void set_error(httplib::Response & response, const std::string & message, const std::string & type, int status) {
+    set_json(response, {{"error", {{"message", message}, {"type", type}, {"code", status}}}}, status);
+}
+
+std::string finish_reason(const generation_state & state, int32_t max_tokens) {
+    if (state.result.stopped_by_eog || state.result.stopped_by_sequence) return "stop";
+    return state.result.generated_tokens >= max_tokens ? "length" : "stop";
+}
 
 bool collect_piece(celiums_bitnet_token, const char * piece, size_t size, void * user_data) {
-    auto & state = *static_cast<stream_state *>(user_data);
-    state.chunks.push_back(std::string(piece, size));
+    auto & state = *static_cast<callback_state *>(user_data);
+    if ((state.connection_closed && state.connection_closed()) ||
+            (state.sink && !state.sink->is_writable())) {
+        celiums_bitnet_request_cancel(state.generation->request);
+        return false;
+    }
+    if (!state.sink) {
+        state.generation->text.append(piece, size);
+        return true;
+    }
+    json choice;
+    if (state.chat) {
+        json delta = {{"content", std::string(piece, size)}};
+        if (!state.sent_role) {
+            delta["role"] = "assistant";
+            state.sent_role = true;
+        }
+        choice = {{"index", 0}, {"delta", delta}, {"finish_reason", nullptr}};
+    } else {
+        choice = {{"index", 0}, {"text", std::string(piece, size)}, {"finish_reason", nullptr}};
+    }
+    const json chunk = {
+        {"id", state.id},
+        {"object", state.chat ? "chat.completion.chunk" : "text_completion"},
+        {"model", "celiums-bitnet"},
+        {"choices", json::array({choice})},
+    };
+    const std::string frame = "data: " + chunk.dump() + "\n\n";
+    if (!state.sink->write(frame.data(), frame.size())) {
+        celiums_bitnet_request_cancel(state.generation->request);
+        return false;
+    }
     return true;
+}
+
+std::string prompt_from_body(const celiums_bitnet_model * model, const json & body, bool chat) {
+    if (!chat) return body.value("prompt", "");
+    const auto & input = body.at("messages");
+    if (!input.is_array() || input.empty()) throw std::invalid_argument("messages must be a non-empty array");
+    std::vector<std::string> roles;
+    std::vector<std::string> contents;
+    roles.reserve(input.size());
+    contents.reserve(input.size());
+    for (const auto & message : input) {
+        if (!message.is_object() || !message.contains("role") || !message.contains("content") ||
+                !message["role"].is_string() || !message["content"].is_string()) {
+            throw std::invalid_argument("each message requires string role and content fields");
+        }
+        roles.push_back(message["role"].get<std::string>());
+        contents.push_back(message["content"].get<std::string>());
+    }
+    std::vector<celiums_bitnet_chat_message> messages(input.size());
+    for (size_t index = 0; index < messages.size(); ++index) {
+        messages[index] = { roles[index].c_str(), contents[index].c_str() };
+    }
+    size_t size = 0;
+    auto status = celiums_bitnet_model_apply_chat_template(
+        model, messages.data(), messages.size(), true, nullptr, &size);
+    if (status != CELIUMS_BITNET_STATUS_BUFFER_TOO_SMALL) {
+        throw std::runtime_error(celiums_bitnet_status_string(status));
+    }
+    std::vector<char> buffer(size);
+    status = celiums_bitnet_model_apply_chat_template(
+        model, messages.data(), messages.size(), true, buffer.data(), &size);
+    if (status != CELIUMS_BITNET_STATUS_OK) {
+        throw std::runtime_error(celiums_bitnet_status_string(status));
+    }
+    return std::string(buffer.data(), size - 1);
+}
+
+void create_generation(
+        celiums_bitnet_model * model,
+        const server_options & options,
+        generation_state & state) {
+    auto session_options = celiums_bitnet_session_default_options();
+    session_options.context_size = options.context_size;
+    session_options.batch_size = options.batch_size;
+    session_options.ubatch_size = options.ubatch_size;
+    session_options.threads = options.threads;
+    session_options.threads_batch = options.threads_batch;
+    state.status = celiums_bitnet_session_create(model, &session_options, &state.session);
+    if (state.status == CELIUMS_BITNET_STATUS_OK) {
+        state.status = celiums_bitnet_request_create(state.session, &state.request);
+    }
+    state.result.struct_size = sizeof(state.result);
+    state.result.api_version = CELIUMS_BITNET_API_VERSION;
+}
+
+void destroy_generation(generation_state & state) {
+    celiums_bitnet_request_destroy(state.request);
+    celiums_bitnet_session_destroy(state.session);
+    state.request = nullptr;
+    state.session = nullptr;
+}
+
+std::string metrics_text(const server_metrics & metrics) {
+    return
+        "# TYPE celiums_bitnet_http_requests_total counter\n"
+        "celiums_bitnet_http_requests_total " + std::to_string(metrics.requests.load()) + "\n"
+        "# TYPE celiums_bitnet_completions_total counter\n"
+        "celiums_bitnet_completions_total " + std::to_string(metrics.completions.load()) + "\n"
+        "# TYPE celiums_bitnet_failures_total counter\n"
+        "celiums_bitnet_failures_total " + std::to_string(metrics.failures.load()) + "\n"
+        "# TYPE celiums_bitnet_cancelled_total counter\n"
+        "celiums_bitnet_cancelled_total " + std::to_string(metrics.cancelled.load()) + "\n"
+        "# TYPE celiums_bitnet_generated_tokens_total counter\n"
+        "celiums_bitnet_generated_tokens_total " + std::to_string(metrics.generated_tokens.load()) + "\n"
+        "# TYPE celiums_bitnet_active_requests gauge\n"
+        "celiums_bitnet_active_requests " + std::to_string(metrics.active.load()) + "\n";
 }
 
 } // namespace
@@ -108,6 +247,8 @@ int celiums_runtime_server(int argc, char ** argv) {
         return 1;
     }
 
+    server_metrics metrics;
+    std::atomic<uint64_t> request_id { 0 };
     httplib::Server server;
     server.set_pre_routing_handler([&](const httplib::Request & request, httplib::Response & response) {
         response.set_header("X-Celiums-BitNet-Runtime", celiums_bitnet_version());
@@ -115,7 +256,7 @@ int celiums_runtime_server(int argc, char ** argv) {
                 authorized(request, options.api_key)) {
             return httplib::Server::HandlerResponse::Unhandled;
         }
-        set_json(response, {{"error", {{"message", "Invalid API Key"}, {"type", "authentication_error"}, {"code", 401}}}}, 401);
+        set_error(response, "Invalid API Key", "authentication_error", 401);
         return httplib::Server::HandlerResponse::Handled;
     });
 
@@ -130,79 +271,122 @@ int celiums_runtime_server(int argc, char ** argv) {
             {"id", "celiums-bitnet"}, {"object", "model"}, {"owned_by", "celiums"}
         }})}});
     });
+    server.Get("/metrics", [&](const httplib::Request &, httplib::Response & response) {
+        response.set_content(metrics_text(metrics), "text/plain; version=0.0.4; charset=utf-8");
+    });
 
     auto completion = [&](const httplib::Request & request, httplib::Response & response, bool chat) {
+        ++metrics.requests;
         try {
             const json body = json::parse(request.body);
-            if (body.value("stream", false)) {
-                set_json(response, {{"error", {{"message", "streaming HTTP responses are not implemented"}, {"type", "not_supported_error"}}}}, 400);
-                return;
-            }
-            std::string prompt;
-            if (chat) {
-                for (const auto & message : body.at("messages")) {
-                    const std::string role = message.value("role", "user");
-                    const std::string content = message.value("content", "");
-                    prompt += role + ": " + content + "\n";
-                }
-                prompt += "assistant: ";
-            } else {
-                prompt = body.value("prompt", "");
-            }
+            const std::string prompt = prompt_from_body(model, body, chat);
             if (prompt.empty()) {
-                set_json(response, {{"error", {{"message", "prompt is required"}, {"type", "invalid_request_error"}}}}, 400);
+                set_error(response, chat ? "messages are required" : "prompt is required", "invalid_request_error", 400);
+                ++metrics.failures;
                 return;
             }
-
-            celiums_bitnet_session * session = nullptr;
-            celiums_bitnet_request * generation_request = nullptr;
-            auto session_options = celiums_bitnet_session_default_options();
-            session_options.context_size = options.context_size;
-            session_options.batch_size = options.batch_size;
-            session_options.ubatch_size = options.ubatch_size;
-            session_options.threads = options.threads;
-            session_options.threads_batch = options.threads_batch;
-            auto request_status = celiums_bitnet_session_create(model, &session_options, &session);
-            if (request_status == CELIUMS_BITNET_STATUS_OK) {
-                request_status = celiums_bitnet_request_create(session, &generation_request);
-            }
+            const int32_t max_tokens = body.value("max_tokens", 128);
+            if (max_tokens < 0) throw std::invalid_argument("max_tokens must be nonnegative");
             auto generation = celiums_bitnet_generation_default_options();
-            generation.max_tokens = body.value("max_tokens", 128);
+            generation.max_tokens = max_tokens;
             generation.temperature = body.value("temperature", 0.8f);
             generation.top_k = body.value("top_k", 40);
             generation.top_p = body.value("top_p", 0.95f);
             generation.seed = body.value("seed", UINT32_MAX);
-            stream_state stream;
-            celiums_bitnet_generation_result generated = {};
-            generated.struct_size = sizeof(generated);
-            generated.api_version = CELIUMS_BITNET_API_VERSION;
-            if (request_status == CELIUMS_BITNET_STATUS_OK) {
-                request_status = celiums_bitnet_generate(
-                    generation_request, prompt.c_str(), &generation, collect_piece, &stream, &generated);
-            }
-            std::string text;
-            for (const auto & piece : stream.chunks) text += piece.get<std::string>();
-            celiums_bitnet_request_destroy(generation_request);
-            celiums_bitnet_session_destroy(session);
-            if (request_status != CELIUMS_BITNET_STATUS_OK) {
-                set_json(response, {{"error", {{"message", celiums_bitnet_status_string(request_status)}, {"type", "server_error"}}}}, 500);
+            const std::string id = (chat ? "chatcmpl-celiums-" : "cmpl-celiums-") +
+                std::to_string(request_id.fetch_add(1));
+
+            if (body.value("stream", false)) {
+                response.set_header("Cache-Control", "no-cache");
+                response.set_header("X-Accel-Buffering", "no");
+                auto streamed = std::make_shared<bool>(false);
+                response.set_chunked_content_provider(
+                    "text/event-stream; charset=utf-8",
+                    [&, streamed, prompt, generation, id, chat, connection_closed = request.is_connection_closed]
+                    (size_t, httplib::DataSink & sink) mutable {
+                        if (*streamed) {
+                            sink.done();
+                            return true;
+                        }
+                        *streamed = true;
+                        generation_state state;
+                        create_generation(model, options, state);
+                        callback_state callback { &state, &sink, connection_closed, id, chat };
+                        ++metrics.active;
+                        if (state.status == CELIUMS_BITNET_STATUS_OK) {
+                            state.status = celiums_bitnet_generate(
+                                state.request, prompt.c_str(), &generation, collect_piece, &callback, &state.result);
+                        }
+                        --metrics.active;
+                        metrics.generated_tokens += state.result.generated_tokens;
+                        const bool disconnected = connection_closed() || !sink.is_writable();
+                        if (state.status == CELIUMS_BITNET_STATUS_OK && !disconnected) {
+                            const json choice = chat
+                                ? json{{"index", 0}, {"delta", json::object()}, {"finish_reason", finish_reason(state, max_tokens)}}
+                                : json{{"index", 0}, {"text", ""}, {"finish_reason", finish_reason(state, max_tokens)}};
+                            const json final_chunk = {
+                                {"id", id},
+                                {"object", chat ? "chat.completion.chunk" : "text_completion"},
+                                {"model", "celiums-bitnet"},
+                                {"choices", json::array({choice})},
+                            };
+                            const std::string final_frame = "data: " + final_chunk.dump() + "\n\ndata: [DONE]\n\n";
+                            sink.write(final_frame.data(), final_frame.size());
+                            ++metrics.completions;
+                        } else if (disconnected || state.status == CELIUMS_BITNET_STATUS_CANCELLED ||
+                                state.status == CELIUMS_BITNET_STATUS_CALLBACK_ABORTED) {
+                            ++metrics.cancelled;
+                        } else {
+                            const json error = {{"error", {{"message", celiums_bitnet_status_string(state.status)}, {"type", "server_error"}}}};
+                            const std::string error_frame = "data: " + error.dump() + "\n\ndata: [DONE]\n\n";
+                            sink.write(error_frame.data(), error_frame.size());
+                            ++metrics.failures;
+                        }
+                        destroy_generation(state);
+                        sink.done();
+                        return !disconnected;
+                    });
                 return;
             }
+
+            generation_state state;
+            create_generation(model, options, state);
+            callback_state callback { &state, nullptr, request.is_connection_closed, id, chat };
+            ++metrics.active;
+            if (state.status == CELIUMS_BITNET_STATUS_OK) {
+                state.status = celiums_bitnet_generate(
+                    state.request, prompt.c_str(), &generation, collect_piece, &callback, &state.result);
+            }
+            --metrics.active;
+            metrics.generated_tokens += state.result.generated_tokens;
+            if (state.status != CELIUMS_BITNET_STATUS_OK) {
+                const bool cancelled = state.status == CELIUMS_BITNET_STATUS_CANCELLED ||
+                    state.status == CELIUMS_BITNET_STATUS_CALLBACK_ABORTED;
+                if (cancelled) ++metrics.cancelled;
+                else ++metrics.failures;
+                set_error(response, celiums_bitnet_status_string(state.status),
+                    cancelled ? "cancelled_error" : "server_error", cancelled ? 499 : 500);
+                destroy_generation(state);
+                return;
+            }
+            ++metrics.completions;
             if (chat) {
                 set_json(response, {
-                    {"id", "chatcmpl-celiums"}, {"object", "chat.completion"}, {"model", "celiums-bitnet"},
-                    {"choices", json::array({{{"index", 0}, {"message", {{"role", "assistant"}, {"content", text}}}, {"finish_reason", "stop"}}})},
-                    {"usage", {{"prompt_tokens", nullptr}, {"completion_tokens", generated.generated_tokens}, {"total_tokens", nullptr}}}
+                    {"id", id}, {"object", "chat.completion"}, {"model", "celiums-bitnet"},
+                    {"choices", json::array({{{"index", 0}, {"message", {{"role", "assistant"}, {"content", state.text}}}, {"finish_reason", finish_reason(state, max_tokens)}}})},
+                    {"usage", {{"prompt_tokens", nullptr}, {"completion_tokens", state.result.generated_tokens}, {"total_tokens", nullptr}}}
                 });
             } else {
                 set_json(response, {
-                    {"id", "cmpl-celiums"}, {"object", "text_completion"}, {"model", "celiums-bitnet"},
-                    {"choices", json::array({{{"index", 0}, {"text", text}, {"finish_reason", "stop"}}})},
-                    {"usage", {{"prompt_tokens", nullptr}, {"completion_tokens", generated.generated_tokens}, {"total_tokens", nullptr}}}
+                    {"id", id}, {"object", "text_completion"}, {"model", "celiums-bitnet"},
+                    {"choices", json::array({{{"index", 0}, {"text", state.text}, {"finish_reason", finish_reason(state, max_tokens)}}})},
+                    {"usage", {{"prompt_tokens", nullptr}, {"completion_tokens", state.result.generated_tokens}, {"total_tokens", nullptr}}}
                 });
             }
+            destroy_generation(state);
         } catch (const std::exception & error) {
-            set_json(response, {{"error", {{"message", error.what()}, {"type", "invalid_request_error"}}}}, 400);
+            ++metrics.failures;
+            set_error(response, error.what(), "invalid_request_error", 400);
         }
     };
 

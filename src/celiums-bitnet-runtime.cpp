@@ -2,6 +2,8 @@
 
 #include "llama.h"
 
+#include "chat.h"
+
 #include <atomic>
 #include <algorithm>
 #include <cmath>
@@ -21,6 +23,8 @@ struct celiums_bitnet_model {
     celiums_bitnet_runtime * runtime;
     llama_model * handle;
     std::atomic<uint32_t> references { 1 };
+    mutable std::mutex chat_mutex;
+    mutable common_chat_templates_ptr chat_templates;
 };
 
 struct celiums_bitnet_session {
@@ -402,6 +406,52 @@ celiums_bitnet_status celiums_bitnet_model_get_description(
     std::memcpy(buffer, description, required);
     *buffer_size = required;
     return CELIUMS_BITNET_STATUS_OK;
+}
+
+celiums_bitnet_status celiums_bitnet_model_apply_chat_template(
+        const celiums_bitnet_model * model,
+        const celiums_bitnet_chat_message * messages,
+        size_t message_count,
+        bool add_assistant,
+        char * text,
+        size_t * text_size) {
+    if (!model || !messages || message_count == 0 || !text_size ||
+            message_count > (size_t) std::numeric_limits<int32_t>::max()) {
+        return CELIUMS_BITNET_STATUS_INVALID_ARGUMENT;
+    }
+    for (size_t index = 0; index < message_count; ++index) {
+        if (!messages[index].role || !messages[index].content) {
+            return CELIUMS_BITNET_STATUS_INVALID_ARGUMENT;
+        }
+    }
+    try {
+        std::lock_guard<std::mutex> lock(model->chat_mutex);
+        if (!model->chat_templates) {
+            model->chat_templates = common_chat_templates_init(model->handle, "");
+        }
+        common_chat_templates_inputs inputs;
+        inputs.add_generation_prompt = add_assistant;
+        inputs.use_jinja = true;
+        inputs.messages.reserve(message_count);
+        for (size_t index = 0; index < message_count; ++index) {
+            common_chat_msg message;
+            message.role = messages[index].role;
+            message.content = messages[index].content;
+            inputs.messages.push_back(std::move(message));
+        }
+        const common_chat_params params = common_chat_templates_apply(model->chat_templates.get(), inputs);
+        const size_t required_size = params.prompt.size() + 1;
+        if (!text || *text_size < required_size) {
+            *text_size = required_size;
+            return CELIUMS_BITNET_STATUS_BUFFER_TOO_SMALL;
+        }
+        std::memcpy(text, params.prompt.data(), params.prompt.size());
+        text[params.prompt.size()] = '\0';
+        *text_size = required_size;
+        return CELIUMS_BITNET_STATUS_OK;
+    } catch (const std::exception &) {
+        return CELIUMS_BITNET_STATUS_INTERNAL_ERROR;
+    }
 }
 
 celiums_bitnet_status celiums_bitnet_session_create(

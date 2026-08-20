@@ -1,3 +1,5 @@
 add_subdirectory(logits-capture)
 add_subdirectory(runtime-bench)
-add_subdirectory(runtime-server)
+if (CELIUMS_BITNET_BUILD_SERVER)
+    add_subdirectory(runtime-server)
+endif()

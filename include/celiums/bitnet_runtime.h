@@ -97,6 +97,11 @@ typedef struct celiums_bitnet_generation_result {
     bool cancelled;
 } celiums_bitnet_generation_result;
 
+typedef struct celiums_bitnet_chat_message {
+    const char * role;
+    const char * content;
+} celiums_bitnet_chat_message;
+
 typedef bool (*celiums_bitnet_stream_callback)(
     celiums_bitnet_token token,
     const char * piece,
@@ -136,6 +141,13 @@ CELIUMS_BITNET_API celiums_bitnet_status celiums_bitnet_model_get_description(
     const celiums_bitnet_model * model,
     char * buffer,
     size_t * buffer_size);
+CELIUMS_BITNET_API celiums_bitnet_status celiums_bitnet_model_apply_chat_template(
+    const celiums_bitnet_model * model,
+    const celiums_bitnet_chat_message * messages,
+    size_t message_count,
+    bool add_assistant,
+    char * text,
+    size_t * text_size);
 
 CELIUMS_BITNET_API celiums_bitnet_status celiums_bitnet_session_create(
     celiums_bitnet_model * model,

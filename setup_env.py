@@ -121,7 +121,8 @@ def configure_and_build(args, arch):
     ]
     run_command(configure, args.log_dir / "configure.log")
     targets = ["celiums-bitnet", "celiums-runtime-bench", "celiums-logits-capture"]
-    targets.append("celiums-runtime-server")
+    if args.build_server:
+        targets.append("celiums-runtime-server")
     if args.build_tests:
         targets.extend(["test-quantize-fns", "test-i2s-mul-mat", "test-celiums-hybrid"])
     run_command(

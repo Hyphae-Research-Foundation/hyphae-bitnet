@@ -63,8 +63,14 @@ jobs:
           -DLLAMA_BUILD_TOOLS=ON
           -DLLAMA_BUILD_TESTS=ON
           -DLLAMA_BUILD_EXAMPLES=OFF
+          -DBUILD_SHARED_LIBS=OFF
           -DLLAMA_SANITIZE_ADDRESS=ON
           -DLLAMA_SANITIZE_UNDEFINED=ON
+          -DGGML_SANITIZE_ADDRESS=ON
+          -DGGML_SANITIZE_UNDEFINED=ON
+          -DCMAKE_C_FLAGS=-fsanitize=address,undefined\ -fno-omit-frame-pointer
+          -DCMAKE_CXX_FLAGS=-fsanitize=address,undefined\ -fno-omit-frame-pointer
+          -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined
       - run: >-
           cmake --build build-sanitize --parallel 2 --target
           test-celiums-runtime-api test-celiums-runtime-session

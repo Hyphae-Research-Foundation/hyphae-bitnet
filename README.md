@@ -186,10 +186,10 @@ tokenization, prefill/decode, copied logits, generation, streaming callbacks,
 stop sequences, and cooperative cancellation. `run`, `bench`, and `serve` use
 that API directly.
 
-`serve` exposes the initial OpenAI-compatible `/v1/completions` and
-`/v1/chat/completions` endpoints. HTTP streaming and continuous batching are
-not yet part of the native server; use compatibility tooling only when those
-features are required during the transition.
+`serve` exposes OpenAI-compatible `/v1/completions` and
+`/v1/chat/completions` endpoints, including SSE streaming. It applies the
+model chat template and exports Prometheus metrics at `/metrics`. Continuous
+batching is not yet part of the native server.
 
 ### Download, Build, and Convert
 

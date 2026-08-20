@@ -18,8 +18,10 @@ celiums-bitnet version
 server exposes `/health`, `/v1/health`, `/v1/models`, `/v1/completions`, and
 `/v1/chat/completions`. The `llama-*` binaries remain optional compatibility
 tools and `llama-bench` remains the performance oracle during the transition.
-The initial native server is synchronous per request and rejects `stream=true`;
-continuous batching and SSE are explicit follow-up work, not silently emulated.
+The native server supports OpenAI-compatible SSE for `stream=true`, applies the
+model chat template, exports Prometheus metrics at `/metrics`, and cancels
+generation when a streaming client disconnects. Continuous batching remains
+explicit follow-up work rather than being silently emulated.
 
 `serve` refuses non-loopback hosts unless an API key is configured or the
 operator explicitly passes `--allow-unauthenticated-remote`.

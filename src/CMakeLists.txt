@@ -28,4 +28,4 @@ target_include_directories(celiums-bitnet-runtime
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-target_link_libraries(celiums-bitnet-runtime PRIVATE llama)
+target_link_libraries(celiums-bitnet-runtime PRIVATE llama llama-common)
