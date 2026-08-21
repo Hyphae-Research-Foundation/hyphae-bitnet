@@ -1,17 +1,22 @@
-# Supported Hardware
+# Supported Hardware and Build Profiles
 
-## Strict CPU
+## Certified Linux x86-64 CPU Profiles
 
-- x86-64 AVX2
-- x86-64 AVX-VNNI
-- Scalar reference and fallback builds
+- `native`: release-builder CPU features, including AVX-VNNI when available;
+- `avx2`: SSE4.2, AVX, AVX2, FMA, and F16C, with AVX-VNNI/AVX-512/AMX disabled;
+- `scalar`: AVX/SSE4.2/FMA/F16C disabled as a correctness fallback.
 
 ARM NEON/DOTPROD remains under validation. Celiums standardizes the persisted
 I2_S layout on blocks of 128 weights regardless of runtime ISA.
 
-Validated release builds must include both an AVX2/VNNI build and a build with
-AVX disabled. The scalar build is a correctness fallback, not a performance
+Validated releases include native, portable AVX2-without-VNNI, and scalar
+archives. The native archive is host-class-specific because it uses
+`-march=native`. The scalar build is a correctness fallback, not a performance
 target.
+
+Official Linux archives are built on Ubuntu 24.04. CPU portability and Linux
+userspace ABI portability are separate contracts; profile names do not promise
+compatibility with older glibc or libstdc++ versions.
 
 ## Experimental
 

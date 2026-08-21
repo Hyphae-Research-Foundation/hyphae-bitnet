@@ -41,7 +41,9 @@ Hyphae is pinned to release `1.2.2`, commit
 
 ## Build
 
-Rust 1.97.1 is the pinned build and release toolchain.
+Rust 1.97.1 is the pinned build and release toolchain for Celiums BitNet 0.3.0.
+Hyphae itself declares MSRV 1.89; the product pins the newer compiler for a
+single reproducible release environment.
 
 ```bash
 cargo build --manifest-path tools/runtime-gateway/Cargo.toml --locked --release --bins
@@ -62,7 +64,7 @@ Release archives build and install all three gateway binaries.
 ## Initialize
 
 Initialization must run while no sidecar owns the data directory. The data
-directory and both output key files must not exist.
+directory may be absent or empty; both output key files must not exist.
 
 ```bash
 install -d -m 0700 "$HOME/.local/share/celiums" "$XDG_RUNTIME_DIR/celiums"
@@ -189,7 +191,7 @@ lexical-only directory.
 
 ## RAG Completion
 
-The gateway preserves the BitNet OpenAI-compatible routes and accepts an
+The gateway preserves the BitNet OpenAI-shaped subset routes and accepts an
 additional opt-in `rag` object. Requests without `rag.enabled=true` pass through
 without retrieval or prompt modification:
 
@@ -305,7 +307,9 @@ contract is widened.
 
 - Gateway request body: 8 MiB.
 - Hyphae product request/response: 16 MiB.
-- Integrated ingest batch: 256 documents and 16 MiB.
+- Gateway knowledge writes: one document per HTTP request. The underlying
+  Hyphae integrated ingest primitive supports bounded batches up to 256
+  documents and 16 MiB.
 - Integrated collection: 10,000 durable documents.
 - Retrieval branch candidates: 10,000.
 - Retrieval hits: 1,024.
@@ -330,7 +334,8 @@ CARGO_INCREMENTAL=0 cargo test \
   --manifest-path tools/runtime-gateway/Cargo.toml --locked --all-targets
 ```
 
-The end-to-end Rust test creates a real Hyphae directory, bootstraps separate
-Owner and Writer credentials, starts authenticated UDS, ingests and updates a
-document, runs BM25, generates a proof/witness, verifies semantic re-execution,
-and deletes the document.
+The end-to-end Rust test creates real lexical and vector Hyphae directories,
+bootstraps separate Owner and Writer credentials, starts authenticated UDS,
+tests unchanged replay plus delete/recreation, runs BM25 and exact/ANN/hybrid
+retrieval, generates a proof/witness, verifies semantic re-execution, and tests
+HTTP pass-through, opt-in RAG, and request idempotency.

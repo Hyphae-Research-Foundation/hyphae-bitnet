@@ -97,6 +97,10 @@ class WrapperCommandTests(unittest.TestCase):
             setup.SUPPORTED_HF_MODELS,
             {"microsoft/BitNet-b1.58-2B-4T": "BitNet-b1.58-2B-4T"},
         )
+        self.assertEqual(
+            setup.CERTIFIED_HF_REVISIONS,
+            {"microsoft/BitNet-b1.58-2B-4T": "04c3b9ad9361b824064a1f25ea60a8be9599b127"},
+        )
 
     def test_setup_rejects_unsupported_local_model(self):
         setup = load_module("celiums_setup_local", ROOT / "setup_env.py")

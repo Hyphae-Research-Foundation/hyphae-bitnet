@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CMAKE = shutil.which("cmake") or "/tmp/opencode/cmake/bin/cmake"
 BUILD_DIR = Path(os.environ.get("CELIUMS_BITNET_TEST_BUILD_DIR", ROOT / "build-runtime"))
 INSTALL_PREFIX = os.environ.get("CELIUMS_BITNET_TEST_INSTALL_PREFIX")
+EXPECT_GATEWAY = os.environ.get("CELIUMS_BITNET_TEST_EXPECT_GATEWAY") == "1"
 MODEL = Path(os.environ.get(
     "CELIUMS_BITNET_TEST_MODEL",
     ROOT / "models" / "BitNet-b1.58-2B-4T" / "ggml-model-i2_s.gguf",
@@ -112,7 +113,8 @@ class RuntimeProductTests(unittest.TestCase):
         gateway = prefix / "bin" / "celiums-runtime-gateway"
         sidecar = prefix / "bin" / "celiums-hyphae-sidecar"
         mcp = prefix / "bin" / "celiums-runtime-mcp"
-        if gateway.exists():
+        if EXPECT_GATEWAY:
+            self.assertTrue(gateway.is_file(), f"installed gateway is unavailable: {gateway}")
             gateway_output = subprocess.run(
                 [str(gateway), "version"], cwd="/tmp", check=True,
                 capture_output=True, text=True,
@@ -156,7 +158,7 @@ class RuntimeProductTests(unittest.TestCase):
             "LICENSE", "LICENSE-MIT", "LICENSE-LLAMA-MIT", "LICENSE-BSD-3-Clause",
             "LICENSE-CPP-HTTPLIB", "LICENSE-jsonhpp", "NOTICE", "NOTICE-CELIUMS",
         }
-        if gateway.exists():
+        if EXPECT_GATEWAY:
             required.update({
                 "LICENSE-HYPHAE-APACHE-2.0", "NOTICE-HYPHAE",
                 "NOTICE-RUST-DEPENDENCIES", "Cargo.lock", "THIRD_PARTY_LICENSES.html",

@@ -17,6 +17,10 @@ if [[ $(cd tools/runtime-gateway && rustc --version | cut -d' ' -f2) != 1.97.1 ]
   printf 'Rust 1.97.1 is required for gateway release packaging\n' >&2
   exit 2
 fi
+if [[ $(ldd --version 2>&1 | sed -n '1{s/.* \([0-9][0-9.]*\)$/\1/p;q}') != 2.39 ]]; then
+  printf 'Official Linux release packaging requires a glibc 2.39 builder (Ubuntu 24.04 baseline)\n' >&2
+  exit 2
+fi
 
 profile=${1:-native}
 build_dir=${2:-build-${profile}}

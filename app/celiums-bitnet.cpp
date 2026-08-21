@@ -19,7 +19,7 @@ void print_help(const char * program) {
     printf("Celiums BitNet Runtime %s\n\n", celiums_bitnet_version());
     printf("Usage: %s <command> [options]\n\n", program);
     printf("Commands:\n");
-    printf("  run       Run interactive BitNet inference\n");
+    printf("  run       Run one-shot BitNet inference\n");
 #ifdef CELIUMS_BITNET_RUNTIME_SERVER
     printf("  serve     Start the HTTP API server\n");
 #endif
