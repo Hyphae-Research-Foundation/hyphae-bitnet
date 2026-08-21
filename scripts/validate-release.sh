@@ -10,8 +10,13 @@ model_sha256=${CELIUMS_BITNET_MODEL_SHA256:-e23b16fa81b890e8b65e676262b645e8ffa5
 jobs=${JOBS:-2}
 release_root=${BUILD_ROOT:-/tmp/celiums-bitnet-release}
 cmake=${CMAKE:-$(command -v cmake || true)}
+python=${PYTHON:-$(command -v python3 || command -v python || true)}
 if [[ -z "$cmake" ]]; then
   printf 'cmake is required (or set CMAKE)\n' >&2
+  exit 2
+fi
+if [[ -z "$python" ]]; then
+  printf 'python3 is required (or set PYTHON)\n' >&2
   exit 2
 fi
 if ! command -v cargo >/dev/null 2>&1 || ! command -v cargo-about >/dev/null 2>&1; then
@@ -71,7 +76,7 @@ for profile in native avx2 scalar; do
   "$cmake" --install "$build"
   CELIUMS_BITNET_TEST_BUILD_DIR="$build" \
   CELIUMS_BITNET_TEST_INSTALL_PREFIX="$install" \
-  python -m unittest tests.test_runtime_product -v
+  "$python" -m unittest tests.test_runtime_product -v
 done
 
 (
@@ -84,17 +89,17 @@ done
   cmp THIRD_PARTY_LICENSES.html "$release_root/THIRD_PARTY_LICENSES.html"
 )
 
-python -m unittest \
+"$python" -m unittest \
   tests.test_i2s_conversion tests.test_logits_comparison tests.test_wrappers -v
 
 CELIUMS_BITNET_TEST_BUILD_DIR="$release_root/build-native" \
 CELIUMS_BITNET_TEST_MODEL="$model" \
-python -m unittest \
+"$python" -m unittest \
   tests.test_runtime_product.RuntimeProductTests.test_native_run_generates_expected_greedy_prefix \
   tests.test_runtime_product.RuntimeProductTests.test_native_benchmark_reports_prefill_and_decode \
   tests.test_runtime_product.RuntimeProductTests.test_native_server_openai_completion_and_authentication -v
 
-python utils/compare_runtime_logits.py \
+"$python" utils/compare_runtime_logits.py \
   --library "$release_root/build-native/src/libceliums-bitnet-runtime.so" \
   --model "$model" \
   --reference "$oracle" \
