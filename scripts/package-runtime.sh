@@ -98,6 +98,7 @@ manifest_command=(
   "$python" utils/release_manifest.py
   --profile "$profile"
   --compiler "$(sed -n 's/^CMAKE_C_COMPILER:FILEPATH=//p' "$build_dir/CMakeCache.txt")"
+  --cxx-compiler "$(sed -n 's/^CMAKE_CXX_COMPILER:FILEPATH=//p' "$build_dir/CMakeCache.txt")"
   --rustc "$(cd tools/runtime-gateway && rustc --version)"
   --cargo-lock tools/runtime-gateway/Cargo.lock
   --hyphae-commit 0471ae25b263fd506da1578068ec57429a6783de
