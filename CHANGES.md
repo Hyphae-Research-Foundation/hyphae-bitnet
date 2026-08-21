@@ -12,6 +12,9 @@
   hard-negative registry surfaces for CTT-1 development.
 - Added a separate MCP stdio adapter, least-privilege Hyphae bootstrap, threat
   model, CMake opt-in, release packaging, Rust CI, and native end-to-end tests.
+- Reorganized the release documentation around the 0.3.0 support matrix,
+  formalized the I2_S/I8_S equations and evidence scope, and documented Ubuntu
+  24.04 as the official Linux package build environment.
 
 ## 0.2.1 - 2026-08-20
 

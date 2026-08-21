@@ -1,10 +1,19 @@
-# BitNet CPU Inference Optimization
+# Historical BitNet CPU Optimization Notes
+
+> [!CAUTION]
+> This file retains inherited implementation notes and experimental workflows.
+> It does not define the Celiums BitNet Runtime 0.3.0 supported product surface.
+> Use the repository root `README.md`, `docs/RUNTIME_PRODUCT.md`, and
+> `docs/SUPPORTED_HARDWARE.md` for current support claims.
 
 This document is adapted from the Microsoft BitNet upstream documentation.
 Performance images and historical values below are upstream results unless a
 Celiums benchmark is explicitly identified.
 
-This update provides significant performance improvements for BitNet inference on CPU through paralleled kernel implementations, native I2_S GEMM/GEMV support, configurable tiling block size and embedding quantization.
+The material below describes inherited or experimental CPU work, including
+parallel kernels, native I2_S GEMM/GEMV, tiling experiments, and embedding
+quantization prototypes. Only features listed in the root support matrix are
+release-certified.
 
 ## Update
 

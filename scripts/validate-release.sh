@@ -22,6 +22,10 @@ if [[ $(cd tools/runtime-gateway && rustc --version | cut -d' ' -f2) != 1.97.1 |
   printf 'Rust 1.97.1 and cargo-about 0.9.2 are required for the release gate\n' >&2
   exit 2
 fi
+if [[ $(ldd --version 2>&1 | sed -n '1{s/.* \([0-9][0-9.]*\)$/\1/p;q}') != 2.39 ]]; then
+  printf 'Official release validation requires a glibc 2.39 builder (Ubuntu 24.04 baseline)\n' >&2
+  exit 2
+fi
 if [[ "$release_root" == / || "$release_root" == "$root" ]]; then
   printf 'BUILD_ROOT must not be the filesystem or repository root\n' >&2
   exit 2

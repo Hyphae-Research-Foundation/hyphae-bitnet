@@ -84,6 +84,11 @@ jobs:
       - run: /tmp/package-stage/usr/bin/celiums-runtime-gateway version
       - run: test -x /tmp/package-stage/usr/bin/celiums-hyphae-sidecar && test -x /tmp/package-stage/usr/bin/celiums-runtime-mcp
       - run: test -s /tmp/package-stage/usr/share/celiums-bitnet-runtime/THIRD_PARTY_LICENSES.html && test -s /tmp/package-stage/usr/share/celiums-bitnet-runtime/Cargo.lock
+      - run: >-
+          CELIUMS_BITNET_TEST_BUILD_DIR=/tmp/package-build
+          CELIUMS_BITNET_TEST_INSTALL_PREFIX=/tmp/package-stage/usr
+          CELIUMS_BITNET_TEST_EXPECT_GATEWAY=1
+          python -m unittest tests.test_runtime_product.RuntimeProductTests.test_shared_install_and_cmake_consumer -v
 
   sanitizers:
     runs-on: ubuntu-24.04
@@ -114,7 +119,7 @@ jobs:
           -R 'test-(celiums-runtime-api|quantize-fns|i2s-mul-mat|celiums-hybrid)$'
 
   release-model:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && vars.CELIUMS_BITNET_MODEL != '' && vars.CELIUMS_BITNET_ORACLE != ''
     runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4

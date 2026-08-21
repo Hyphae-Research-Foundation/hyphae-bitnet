@@ -18,7 +18,7 @@ celiums-bitnet version
 server exposes `/health`, `/v1/health`, `/v1/models`, `/v1/completions`, and
 `/v1/chat/completions`. The `llama-*` binaries remain optional compatibility
 tools and `llama-bench` remains the performance oracle during the transition.
-The native server supports OpenAI-compatible SSE for `stream=true`, applies the
+The native server supports an OpenAI-shaped SSE subset for `stream=true`, applies the
 model chat template, exports Prometheus metrics at `/metrics`, and cancels
 generation when a streaming client disconnects. Continuous batching remains
 explicit follow-up work rather than being silently emulated.
@@ -53,19 +53,24 @@ Models and runtimes remain alive while dependent handles exist. The API remains
 `celiums_bitnet_request_cancel()` is thread-safe; Request destruction must occur
 after its synchronous generation call has returned.
 
-`celiums_bitnet_model_validate_strict()` performs a full tensor-checking load
-and accepts only `bitnet-b1.58` models marked as `MOSTLY_I2_S` (file type 41).
+`celiums_bitnet_model_validate_strict()` performs a checked model load and
+accepts only `bitnet-b1.58` metadata marked as `MOSTLY_I2_S` (file type 41).
+The stronger Python conversion validator additionally checks required
+projections, rank, dimensions, byte counts, and scales. Neither path currently
+scans every packed field for reserved code 3.
 
 ## Build Profiles
 
 `CELIUMS_BITNET_CPU_PROFILE` selects one of:
 
 - `native`: optimize for the build host.
-- `avx2`: portable x86 AVX2 without AVX-VNNI or AVX-512.
+- `avx2`: portable x86-64 SSE4.2/AVX/AVX2/FMA/F16C without AVX-VNNI or AVX-512.
 - `scalar`: scalar reference path without AVX.
 
 The `native` release archive is host-class-specific because it uses
-`-march=native`. Use `avx2` or `scalar` for portable distribution.
+`-march=native`. Use `avx2` or `scalar` for CPU-ISA portability. Official Linux
+archives are built on Ubuntu 24.04; profile names do not promise compatibility
+with older glibc or libstdc++ userspaces.
 
 Strict I2_S is the supported product conversion. TL1/TL2, quantized embeddings,
 GPU, Swift, and Android remain experimental or inherited and are outside the
@@ -94,10 +99,14 @@ sanitizer validation and intentionally do not install the SDK.
 `.github/workflows/runtime-ci.yml` validates native, AVX2, scalar, and
 ASan/UBSan builds, the installed CMake consumer, server security policy, and a
 package smoke test. Model-backed generation, HTTP, benchmark, and exactness
-checks are a separate release gate. `scripts/package-runtime.sh` creates a Linux
+checks are a separate release gate. A manual GitHub dispatch runs that gate only
+when the self-hosted runner and model/oracle variables are configured; local
+release publication must run `scripts/validate-release.sh` and retain its
+result. `scripts/package-runtime.sh` creates a Linux
 x86_64 profile-specific
-archive and `utils/release_manifest.py` records product/engine commits,
-compiler, platform, profile, model hash when supplied, and artifact hashes.
+archive and `utils/release_manifest.py` records product/engine commits, C and
+C++ compiler identities, platform, profile, model hash when supplied, and
+artifact hashes.
 Gateway-enabled manifests also record the Rust compiler. Hyphae is pinned by
 exact Git commit in the gateway lockfile.
 

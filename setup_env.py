@@ -18,6 +18,9 @@ LOGGER = logging.getLogger("celiums_bitnet.setup")
 SUPPORTED_HF_MODELS = {
     "microsoft/BitNet-b1.58-2B-4T": "BitNet-b1.58-2B-4T",
 }
+CERTIFIED_HF_REVISIONS = {
+    "microsoft/BitNet-b1.58-2B-4T": "04c3b9ad9361b824064a1f25ea60a8be9599b127",
+}
 
 ARCH_ALIAS = {
     "AMD64": "x86_64",
@@ -57,8 +60,8 @@ def download_model(args, model_dir):
         return
     model_dir.mkdir(parents=True, exist_ok=True)
     command = ["huggingface-cli", "download", args.hf_repo, "--local-dir", str(model_dir)]
-    if args.revision:
-        command.extend(["--revision", args.revision])
+    revision = args.revision or CERTIFIED_HF_REVISIONS[args.hf_repo]
+    command.extend(["--revision", revision])
     run_command(command, args.log_dir / "download_model.log")
 
 
@@ -142,7 +145,10 @@ def parse_args():
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--hf-repo", choices=SUPPORTED_HF_MODELS)
     source.add_argument("--local-model-dir", type=Path)
-    parser.add_argument("--revision", help="Hugging Face revision to download")
+    parser.add_argument(
+        "--revision",
+        help="Hugging Face revision; supported repositories default to the certified release revision",
+    )
     parser.add_argument("--model-dir", type=Path, default=ROOT / "models")
     parser.add_argument("--build-dir", type=Path, default=ROOT / "build")
     parser.add_argument("--log-dir", type=Path, default=ROOT / "logs")

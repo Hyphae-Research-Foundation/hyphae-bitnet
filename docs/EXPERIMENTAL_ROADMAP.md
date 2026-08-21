@@ -18,7 +18,8 @@ controlled benchmark matrix.
 - Measure the reduced barriers and workspace lifetime.
 
 This requires an explicit reusable quantized-activation graph value or a
-multi-matrix CPU operator. It is not enabled in 0.1 development builds.
+multi-matrix CPU operator. It is not enabled in the 0.3.0 supported product
+build.
 
 ## Exact FFN Channel Compaction
 

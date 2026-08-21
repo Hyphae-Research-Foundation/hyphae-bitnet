@@ -24,11 +24,18 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
+def command_version(command):
+    return subprocess.run(
+        [command, "--version"], check=True, capture_output=True, text=True
+    ).stdout.splitlines()[0].strip()
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Write a Celiums BitNet Runtime build manifest")
     parser.add_argument("--profile", choices=("native", "avx2", "scalar"), required=True)
     parser.add_argument("--build-type", default="Release")
     parser.add_argument("--compiler", required=True)
+    parser.add_argument("--cxx-compiler", required=True)
     parser.add_argument("--rustc")
     parser.add_argument("--cargo-lock", type=Path)
     parser.add_argument("--hyphae-commit")
@@ -86,7 +93,8 @@ def main():
         "source_dirty": source_dirty,
         "profile": args.profile,
         "build_type": args.build_type,
-        "compiler": args.compiler,
+        "c_compiler": command_version(args.compiler),
+        "cxx_compiler": command_version(args.cxx_compiler),
         "rustc": args.rustc,
         "cargo_lock_sha256": sha256_file(args.cargo_lock) if args.cargo_lock else None,
         "hyphae_commit": args.hyphae_commit,
