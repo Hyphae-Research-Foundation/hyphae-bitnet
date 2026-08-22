@@ -1,0 +1,122 @@
+{
+  "schema": "celiums-bitnet-cross-runtime-benchmark-v1",
+  "date": "2026-08-22",
+  "authority": "aws-i7i-metal-24xl",
+  "note": "KVM c-60 numbers are hypotheses only. This file is the x86 metal baseline. r8g was not launched.",
+  "system": {
+    "provider": "AWS",
+    "instance_id": "i-05b67e745a8cb683b",
+    "instance_type": "i7i.metal-24xl",
+    "region": "us-east-1",
+    "az": "us-east-1a",
+    "cpu": "INTEL(R) XEON(R) PLATINUM 8559C",
+    "sockets": 1,
+    "physical_cores": 48,
+    "threads_per_core": 2,
+    "vcpus": 96,
+    "numa_nodes": 1,
+    "memory_mib": 773418,
+    "l3_cache": "320 MiB",
+    "cpu_max_mhz": 4000.0,
+    "governor": "performance",
+    "isa": ["AVX2", "AVX-512", "AVX-512 VNNI", "AMX-INT8", "AMX-TILE", "AMX-BF16"],
+    "compiler": "GCC (Ubuntu 24.04)",
+    "build_type": "Release",
+    "cpu_profile": "native",
+    "strict": true
+  },
+  "product": {
+    "release": "0.3.0",
+    "product_commit": "24bfe056a",
+    "engine_commit": "e1002b8be",
+    "engine_tree": "3e44df24acb33ac5fb4f55ae74da6186e692de37"
+  },
+  "settings": {
+    "backend": "CPU",
+    "n_prompt": 128,
+    "n_gen": 128,
+    "batch": 128,
+    "ubatch": 128,
+    "repetitions": 5,
+    "cpu_strict": true,
+    "numa": "isolate",
+    "gpu_layers": 0,
+    "mmap": true
+  },
+  "membw_memcpy_2gib_gbs": {
+    "threads_1": 12.87,
+    "threads_48": 118.81,
+    "threads_96": 110.14,
+    "note": "Reported figure is copy throughput. Read+write bus traffic is ~2x. SMT does not increase bandwidth."
+  },
+  "i2s": {
+    "model": "BitNet-b1.58-2B-4T I2_S",
+    "sha256": "e23b16fa81b890e8b65e676262b645e8ffa5ae1f6df89dadaf793246826bbd90",
+    "file_size_gib": 1.10,
+    "params": 2.41e9,
+    "peak_rss_kib": 1243412,
+    "results": [
+      {"threads": 1, "pp128_avg_ts": 77.820634, "pp128_stddev_ts": 0.011528, "tg128_avg_ts": 9.580068, "tg128_stddev_ts": 0.063203},
+      {"threads": 8, "pp128_avg_ts": 556.072700, "pp128_stddev_ts": 0.847108, "tg128_avg_ts": 69.561652, "tg128_stddev_ts": 0.072964},
+      {"threads": 24, "pp128_avg_ts": 1441.938179, "pp128_stddev_ts": 11.111957, "tg128_avg_ts": 143.896562, "tg128_stddev_ts": 1.202393},
+      {"threads": 48, "pp128_avg_ts": 1303.873981, "pp128_stddev_ts": 11.432734, "tg128_avg_ts": 152.766058, "tg128_stddev_ts": 1.071209},
+      {"threads": 96, "pp128_avg_ts": 1780.169921, "pp128_stddev_ts": 11.361309, "tg128_avg_ts": 151.090023, "tg128_stddev_ts": 1.064588}
+    ],
+    "perf": {
+      "t1": {"ipc": 0.9281, "cache_miss_pct": 77.84, "workload": "pp32+tg128 r=3"},
+      "t48": {"ipc": 0.4470, "cache_miss_pct": 63.56, "workload": "pp32+tg128 r=3"}
+    },
+    "profile_t48_note": "GGML_I2S_PROFILE=1 collapsed tg128 from 152.77 to 32.39 because profile_record takes a mutex on every thread after every barrier. Do not treat 51-59% barrier_thread_us as unprofiled wall-clock."
+  },
+  "q1_vnni_4x8": {
+    "model": "Bonsai-27B-Q1_0",
+    "sha256": "17ef842e47450caeb8eaa3ebfbbab5d2f2278b62b79be107985fb69a2f819aa0",
+    "file_size_bytes": 3803452480,
+    "params": 26895998464,
+    "peak_rss_kib": 7364304,
+    "kernel": "ggml_gemv/gemm_q1_0_4x8_q8_0 emits vpdpbusd",
+    "results": [
+      {"threads": 1, "pp128_avg_ts": 2.388118, "pp128_stddev_ts": 0.000604, "tg128_avg_ts": 1.239977, "tg128_stddev_ts": 0.000200},
+      {"threads": 8, "pp128_avg_ts": 18.746347, "pp128_stddev_ts": 0.002134, "tg128_avg_ts": 7.976025, "tg128_stddev_ts": 0.004154},
+      {"threads": 24, "pp128_avg_ts": 50.469768, "pp128_stddev_ts": 0.141777, "tg128_avg_ts": 16.024649, "tg128_stddev_ts": 0.040169},
+      {"threads": 48, "pp128_avg_ts": 74.444636, "pp128_stddev_ts": 0.393051, "tg128_avg_ts": 19.161286, "tg128_stddev_ts": 0.035372},
+      {"threads": 96, "pp128_avg_ts": 68.840953, "pp128_stddev_ts": 1.320900, "tg128_avg_ts": 18.563735, "tg128_stddev_ts": 0.048154}
+    ],
+    "perf": {
+      "t1": {"ipc": 2.2088, "cache_miss_pct": 65.55, "workload": "pp32+tg64 r=1"},
+      "t48": {"ipc": 1.1532, "cache_miss_pct": 69.70, "workload": "pp32+tg64 r=1"}
+    }
+  },
+  "q1_generic_no_repack": {
+    "note": "Same GGUF and host as q1_vnni_4x8; ggml_repack Q1 4x8 gate forced off. r=3. Binary restored to VNNI afterwards.",
+    "peak_rss_kib": 4023884,
+    "window_utc": {"started": "2026-08-22T03:03:30Z", "finished": "2026-08-22T03:20:02Z"},
+    "results": [
+      {"threads": 1, "pp128_avg_ts": 1.272044, "pp128_stddev_ts": 0.001646, "tg128_avg_ts": 1.017296, "tg128_stddev_ts": 0.000088},
+      {"threads": 8, "pp128_avg_ts": 10.030706, "pp128_stddev_ts": 0.000628, "tg128_avg_ts": 6.906757, "tg128_stddev_ts": 0.002123},
+      {"threads": 24, "pp128_avg_ts": 28.004478, "pp128_stddev_ts": 0.052209, "tg128_avg_ts": 14.063904, "tg128_stddev_ts": 0.028062},
+      {"threads": 48, "pp128_avg_ts": 42.837234, "pp128_stddev_ts": 0.050494, "tg128_avg_ts": 16.709179, "tg128_stddev_ts": 0.037573}
+    ],
+    "vnni_speedup": {
+      "t1_pp": 1.877,
+      "t1_tg": 1.219,
+      "t8_pp": 1.869,
+      "t8_tg": 1.155,
+      "t24_pp": 1.802,
+      "t24_tg": 1.139,
+      "t48_pp": 1.738,
+      "t48_tg": 1.147
+    }
+  },
+  "c60_hypothesis_vs_metal": {
+    "i2s_t1_kernel": "unchanged (c-60 6548N pp/tg 78.07/9.36 vs i7i 77.82/9.58)",
+    "i2s_decode_flat_30_to_60": "false on metal: tg scales 9.58 -> 69.56 -> 143.90 -> 152.77 then SMT-flat",
+    "q1_vnni_t1_vs_c60_8358": "i7i 2.39/1.24 vs c-60 VNNI 1.54/1.05 vs Prism Q1 6548N 2.37/1.42",
+    "smt96_as_96_workers": "false for decode on both models"
+  },
+  "raw_artifacts": "docs/i7i-metal-2026-08-22/",
+  "window_utc": {
+    "started": "2026-08-22T02:34:05Z",
+    "finished": "2026-08-22T02:57:29Z"
+  }
+}

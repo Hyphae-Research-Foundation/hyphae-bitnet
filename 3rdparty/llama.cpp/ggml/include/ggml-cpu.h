@@ -97,6 +97,9 @@ extern "C" {
     GGML_BACKEND_API int ggml_cpu_has_fp16_va    (void);
     GGML_BACKEND_API int ggml_cpu_has_dotprod    (void);
     GGML_BACKEND_API int ggml_cpu_has_matmul_int8(void);
+    /* Extra-buffer Q1/Q4 panel repack. 0 disables the in-RAM compute image. */
+    GGML_BACKEND_API void ggml_cpu_set_repack_enabled(int enabled);
+    GGML_BACKEND_API int  ggml_cpu_get_repack_enabled(void);
     GGML_BACKEND_API int ggml_cpu_has_sve        (void);
     GGML_BACKEND_API int ggml_cpu_get_sve_cnt    (void);  // sve vector length in bytes
     GGML_BACKEND_API int ggml_cpu_has_sme        (void);

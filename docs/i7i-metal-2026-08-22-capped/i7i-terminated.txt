@@ -1,0 +1,5 @@
+{
+    "Id": "i-08dba101dcf4b1e3c",
+    "State": "terminated",
+    "Type": "i7i.metal-24xl"
+}

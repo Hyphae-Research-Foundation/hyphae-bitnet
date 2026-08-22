@@ -26,6 +26,7 @@ def build_command(args):
     command = [
         str(benchmark_binary(args.build_dir)), "bench",
         "-m", str(args.model),
+        "--model-family", getattr(args, "model_family", "bitnet"),
         "-p", str(args.n_prompt),
         "-n", str(args.n_token),
         "-b", str(args.batch),
@@ -33,6 +34,12 @@ def build_command(args):
         "-t", str(args.threads),
         "-r", str(args.repetitions),
     ]
+    if getattr(args, "n_seq", None):
+        command.extend(["--n-seq", str(args.n_seq)])
+    if getattr(args, "ram_budget_bytes", None):
+        command.extend(["--ram-budget-bytes", str(args.ram_budget_bytes)])
+    if getattr(args, "compute_layout", None) is not None:
+        command.extend(["--compute-layout", "1" if args.compute_layout else "0"])
     if args.output != "jsonl":
         raise ValueError("The native runtime benchmark currently supports only jsonl output")
     if args.cpu_mask:
@@ -43,6 +50,7 @@ def build_command(args):
 def parse_args():
     parser = argparse.ArgumentParser(description="Benchmark Celiums BitNet prefill and decode")
     parser.add_argument("-m", "--model", type=Path, required=True)
+    parser.add_argument("--model-family", choices=["bitnet", "bonsai"], default="bitnet")
     parser.add_argument("-n", "--n-token", type=int, default=128)
     parser.add_argument("-p", "--n-prompt", type=int, default=128)
     parser.add_argument("-t", "--threads", type=int, default=2)
@@ -52,6 +60,9 @@ def parse_args():
     parser.add_argument("-o", "--output", choices=["csv", "json", "jsonl", "md", "sql"], default="jsonl")
     parser.add_argument("--cpu-mask")
     parser.add_argument("--build-dir", type=Path, default=ROOT / "build")
+    parser.add_argument("--n-seq", type=int, default=1)
+    parser.add_argument("--ram-budget-bytes", type=int, default=0)
+    parser.add_argument("--compute-layout", type=int, choices=[0, 1], default=1)
     args = parser.parse_args()
     args.build_dir = args.build_dir.resolve()
     return args

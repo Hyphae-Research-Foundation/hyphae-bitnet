@@ -11,16 +11,28 @@ namespace {
 
 struct options {
     const char * model = nullptr;
+    celiums_bitnet_model_family family = CELIUMS_BITNET_MODEL_FAMILY_BITNET_B158_I2S;
     int32_t prompt_tokens = 128;
     int32_t generated_tokens = 128;
     int32_t batch = 128;
     int32_t ubatch = 128;
     int32_t threads = 2;
     int32_t repetitions = 5;
+    uint32_t n_seq = 1;
+    uint64_t ram_budget_bytes = 0;
+    bool use_compute_layout = true;
 };
 
 void usage(const char * program) {
-    printf("Usage: %s --model MODEL.gguf [-p 128] [-n 128] [-t 2] [-r 5]\n", program);
+    printf("Usage: %s --model MODEL.gguf [--model-family bitnet|bonsai] [-p 128] [-n 128] [-t 2] [-r 5]\n"
+           "          [--n-seq 1] [--ram-budget-bytes N] [--compute-layout 0|1]\n", program);
+}
+
+bool parse_family(const char * value, celiums_bitnet_model_family & family) {
+    if (std::string(value) == "bitnet") family = CELIUMS_BITNET_MODEL_FAMILY_BITNET_B158_I2S;
+    else if (std::string(value) == "bonsai") family = CELIUMS_BITNET_MODEL_FAMILY_BONSAI_QWEN35_Q1_0;
+    else return false;
+    return true;
 }
 
 bool parse(int argc, char ** argv, options & result) {
@@ -35,12 +47,18 @@ bool parse(int argc, char ** argv, options & result) {
         }
         const char * value = argv[++index];
         if (argument == "--model" || argument == "-m") result.model = value;
+        else if (argument == "--model-family") {
+            if (!parse_family(value, result.family)) return false;
+        }
         else if (argument == "--n-prompt" || argument == "-p") result.prompt_tokens = std::stoi(value);
         else if (argument == "--n-gen" || argument == "-n") result.generated_tokens = std::stoi(value);
         else if (argument == "--batch-size" || argument == "-b") result.batch = std::stoi(value);
         else if (argument == "--ubatch-size" || argument == "-ub") result.ubatch = std::stoi(value);
         else if (argument == "--threads" || argument == "-t") result.threads = std::stoi(value);
         else if (argument == "--repetitions" || argument == "-r") result.repetitions = std::stoi(value);
+        else if (argument == "--n-seq") result.n_seq = (uint32_t) std::stoul(value);
+        else if (argument == "--ram-budget-bytes") result.ram_budget_bytes = std::stoull(value);
+        else if (argument == "--compute-layout") result.use_compute_layout = std::stoi(value) != 0;
         else return false;
     }
     return result.model && result.prompt_tokens >= 0 && result.generated_tokens >= 0 &&
@@ -103,10 +121,13 @@ int celiums_runtime_bench(int argc, char ** argv) {
     celiums_bitnet_model * model = nullptr;
     celiums_bitnet_session * session = nullptr;
     auto runtime_options = celiums_bitnet_runtime_default_options();
+    runtime_options.ram_budget_bytes = benchmark.ram_budget_bytes;
     auto status = celiums_bitnet_runtime_create(&runtime_options, &runtime);
     if (status == CELIUMS_BITNET_STATUS_OK) {
         auto model_options = celiums_bitnet_model_default_options();
-        status = celiums_bitnet_model_load(runtime, benchmark.model, &model_options, &model);
+        model_options.use_compute_layout = benchmark.use_compute_layout;
+        status = celiums_bitnet_model_load_family(
+            runtime, benchmark.model, benchmark.family, &model_options, &model);
     }
     if (status == CELIUMS_BITNET_STATUS_OK) {
         auto session_options = celiums_bitnet_session_default_options();
@@ -115,6 +136,9 @@ int celiums_runtime_bench(int argc, char ** argv) {
         session_options.ubatch_size = benchmark.ubatch;
         session_options.threads = benchmark.threads;
         session_options.threads_batch = benchmark.threads;
+        session_options.n_seq = benchmark.n_seq;
+        session_options.ram_budget_bytes = benchmark.ram_budget_bytes;
+        session_options.use_compute_layout = benchmark.use_compute_layout;
         status = celiums_bitnet_session_create(model, &session_options, &session);
     }
     if (status != CELIUMS_BITNET_STATUS_OK) {
@@ -164,19 +188,23 @@ int celiums_runtime_bench(int argc, char ** argv) {
 
     if (status == CELIUMS_BITNET_STATUS_OK && !prompt_rates.empty()) {
         printf("{\"product_commit\":\"%s\",\"engine_commit\":\"%s\",\"engine_tree\":\"%s\","
+               "\"model_family\":\"%s\",\"cpu_profile\":\"%s\","
                "\"runtime_version\":\"%s\",\"test\":\"pp%d\","
                "\"n_prompt\":%d,\"n_gen\":0,\"n_batch\":%d,\"n_ubatch\":%d,"
                "\"n_threads\":%d,\"avg_ts\":%.6f}\n",
                celiums_bitnet_product_commit(), celiums_bitnet_engine_commit(), celiums_bitnet_engine_tree(),
+               celiums_bitnet_model_family_string(benchmark.family), celiums_bitnet_cpu_profile(),
                celiums_bitnet_version(), benchmark.prompt_tokens,
                benchmark.prompt_tokens, benchmark.batch, benchmark.ubatch, benchmark.threads, average(prompt_rates));
     }
     if (status == CELIUMS_BITNET_STATUS_OK && !decode_rates.empty()) {
         printf("{\"product_commit\":\"%s\",\"engine_commit\":\"%s\",\"engine_tree\":\"%s\","
+               "\"model_family\":\"%s\",\"cpu_profile\":\"%s\","
                "\"runtime_version\":\"%s\",\"test\":\"tg%d\","
                "\"n_prompt\":0,\"n_gen\":%d,\"n_batch\":%d,\"n_ubatch\":%d,"
                "\"n_threads\":%d,\"avg_ts\":%.6f}\n",
                celiums_bitnet_product_commit(), celiums_bitnet_engine_commit(), celiums_bitnet_engine_tree(),
+               celiums_bitnet_model_family_string(benchmark.family), celiums_bitnet_cpu_profile(),
                celiums_bitnet_version(), benchmark.generated_tokens,
                benchmark.generated_tokens, benchmark.batch, benchmark.ubatch, benchmark.threads, average(decode_rates));
     }

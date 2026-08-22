@@ -28,6 +28,7 @@ namespace {
 
 struct server_options {
     const char * model = nullptr;
+    celiums_bitnet_model_family family = CELIUMS_BITNET_MODEL_FAMILY_BITNET_B158_I2S;
     std::string host = "127.0.0.1";
     int port = 8080;
     int32_t context_size = 2048;
@@ -35,6 +36,9 @@ struct server_options {
     int32_t ubatch_size = 512;
     int32_t threads = 2;
     int32_t threads_batch = 2;
+    uint32_t n_seq = 1;
+    uint64_t ram_budget_bytes = 0;
+    bool use_compute_layout = true;
     std::string api_key;
     bool allow_unauthenticated_remote = false;
 };
@@ -70,6 +74,17 @@ void usage(const char * program) {
     printf("  --api-key KEY                     require an API key\n");
     printf("  --api-key-file PATH               read the API key from PATH\n");
     printf("  --allow-unauthenticated-remote    permit a remote bind without authentication\n");
+    printf("  --model-family FAMILY             bitnet (default) or bonsai\n");
+    printf("  --n-seq N                         decode slots sharing the weight image (default 1)\n");
+    printf("  --ram-budget-bytes N              RAM cap; 0 = auto (half host, with headroom)\n");
+    printf("  --compute-layout 0|1              in-RAM compute image (default 1)\n");
+}
+
+bool parse_family(const char * value, celiums_bitnet_model_family & family) {
+    if (std::string(value) == "bitnet") family = CELIUMS_BITNET_MODEL_FAMILY_BITNET_B158_I2S;
+    else if (std::string(value) == "bonsai") family = CELIUMS_BITNET_MODEL_FAMILY_BONSAI_QWEN35_Q1_0;
+    else return false;
+    return true;
 }
 
 bool is_loopback_host(const std::string & host) {
@@ -130,12 +145,18 @@ bool parse(int argc, char ** argv, server_options & result) {
             const std::string value = argument.substr(equals + 1);
             if (name == "--host") result.host = value;
             else if (name == "--api-key") result.api_key = value;
+            else if (name == "--model-family") {
+                if (!parse_family(value.c_str(), result.family)) return false;
+            }
             else return false;
             continue;
         }
         if (index + 1 >= argc) return false;
         const char * value = argv[++index];
         if (argument == "--model" || argument == "-m") result.model = value;
+        else if (argument == "--model-family") {
+            if (!parse_family(value, result.family)) return false;
+        }
         else if (argument == "--host") result.host = value;
         else if (argument == "--port") result.port = std::stoi(value);
         else if (argument == "--ctx-size" || argument == "-c") result.context_size = std::stoi(value);
@@ -145,6 +166,9 @@ bool parse(int argc, char ** argv, server_options & result) {
         else if (argument == "--threads-batch" || argument == "-tb") result.threads_batch = std::stoi(value);
         else if (argument == "--api-key") result.api_key = value;
         else if (argument == "--api-key-file") result.api_key = read_api_key(value);
+        else if (argument == "--n-seq") result.n_seq = (uint32_t) std::stoul(value);
+        else if (argument == "--ram-budget-bytes") result.ram_budget_bytes = std::stoull(value);
+        else if (argument == "--compute-layout") result.use_compute_layout = std::stoi(value) != 0;
         else return false;
     }
     if (!is_loopback_host(result.host) && result.api_key.empty() && !result.allow_unauthenticated_remote) {
@@ -160,7 +184,8 @@ bool parse(int argc, char ** argv, server_options & result) {
 #endif
     }
     return result.model && result.port > 0 && result.port <= 65535 && result.context_size > 0 &&
-        result.batch_size > 0 && result.ubatch_size > 0 && result.threads > 0 && result.threads_batch > 0;
+        result.batch_size > 0 && result.ubatch_size > 0 && result.threads > 0 &&
+        result.threads_batch > 0 && result.n_seq > 0;
 }
 
 bool authorized(const httplib::Request & request, const std::string & api_key) {
@@ -267,6 +292,9 @@ void create_generation(
     session_options.ubatch_size = options.ubatch_size;
     session_options.threads = options.threads;
     session_options.threads_batch = options.threads_batch;
+    session_options.n_seq = options.n_seq;
+    session_options.ram_budget_bytes = options.ram_budget_bytes;
+    session_options.use_compute_layout = options.use_compute_layout;
     state.status = celiums_bitnet_session_create(model, &session_options, &state.session);
     if (state.status == CELIUMS_BITNET_STATUS_OK) {
         state.status = celiums_bitnet_request_create(state.session, &state.request);
@@ -304,8 +332,11 @@ int celiums_runtime_server(int argc, char ** argv) {
     server_options options;
     try {
         if (!parse(argc, argv, options)) {
-            usage(argv[0]);
-            return argc > 1 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h") ? 0 : 2;
+            const bool help = argc > 1 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h");
+            if (!help) {
+                usage(argv[0]);
+            }
+            return help ? 0 : 2;
         }
     } catch (const std::exception & error) {
         fprintf(stderr, "celiums-bitnet serve: %s\n", error.what());
@@ -315,10 +346,13 @@ int celiums_runtime_server(int argc, char ** argv) {
     celiums_bitnet_runtime * runtime = nullptr;
     celiums_bitnet_model * model = nullptr;
     auto runtime_options = celiums_bitnet_runtime_default_options();
+    runtime_options.ram_budget_bytes = options.ram_budget_bytes;
     auto status = celiums_bitnet_runtime_create(&runtime_options, &runtime);
     if (status == CELIUMS_BITNET_STATUS_OK) {
         auto model_options = celiums_bitnet_model_default_options();
-        status = celiums_bitnet_model_load(runtime, options.model, &model_options, &model);
+        model_options.use_compute_layout = options.use_compute_layout;
+        status = celiums_bitnet_model_load_family(
+            runtime, options.model, options.family, &model_options, &model);
     }
     if (status != CELIUMS_BITNET_STATUS_OK) {
         fprintf(stderr, "celiums-bitnet serve: %s\n", celiums_bitnet_status_string(status));
@@ -346,7 +380,8 @@ int celiums_runtime_server(int argc, char ** argv) {
     });
     server.Get("/v1/models", [&](const httplib::Request &, httplib::Response & response) {
         set_json(response, {{"object", "list"}, {"data", json::array({{
-            {"id", "celiums-bitnet"}, {"object", "model"}, {"owned_by", "celiums"}
+            {"id", "celiums-bitnet"}, {"object", "model"}, {"owned_by", "celiums"},
+            {"model_family", celiums_bitnet_model_family_string(options.family)}
         }})}});
     });
     server.Get("/metrics", [&](const httplib::Request &, httplib::Response & response) {

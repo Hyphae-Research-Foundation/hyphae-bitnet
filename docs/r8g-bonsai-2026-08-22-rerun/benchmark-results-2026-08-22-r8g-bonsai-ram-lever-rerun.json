@@ -1,0 +1,67 @@
+{
+  "schema": "celiums-bitnet-cross-runtime-benchmark-v1",
+  "date": "2026-08-22",
+  "authority": "aws-r8g-metal-24xl",
+  "note": "Rerun of RAM-capped runtime on a fresh r8g.metal-24xl. Q1 expanded to int8 ±1 in CPU_REPACK (25962 MiB). Cap 64 GiB. Packed-mmap baseline 0.528/0.500 t=1.",
+  "system": {
+    "provider": "AWS",
+    "instance_id": "i-0f58f6ba05fb07a2f",
+    "instance_type": "r8g.metal-24xl",
+    "region": "us-east-1",
+    "az": "us-east-1a",
+    "public_ip": "44.195.31.104",
+    "cpu": "Neoverse-V2",
+    "physical_cores": 96
+  },
+  "product": {
+    "release": "0.3.0",
+    "product_commit": "unknown",
+    "engine_commit": "e1002b8be",
+    "engine_tree": "3e44df24acb33ac5fb4f55ae74da6186e692de37",
+    "tool": "celiums-bitnet bench --model-family bonsai --compute-layout 1 --ram-budget-bytes 68719476736"
+  },
+  "settings": {
+    "n_prompt": 128,
+    "n_gen": 128,
+    "batch": 128,
+    "ubatch": 128,
+    "repetitions": 3,
+    "n_seq_max": 1,
+    "ram_budget_bytes": 68719476736
+  },
+  "fail_closed_tiny_budget": {
+    "ram_budget_bytes": 64,
+    "status": "ram budget exceeded",
+    "exit": 1,
+    "rss_kib": 8584,
+    "note": "No Q1->Q8 allocation."
+  },
+  "baseline_packed_mmap": {
+    "t1_pp128": 0.528064,
+    "t1_tg128": 0.499503,
+    "t96_tg128": 18.164302
+  },
+  "bonsai_q1_compute_layout": {
+    "model": "Bonsai-27B-Q1_0",
+    "sha256": "17ef842e47450caeb8eaa3ebfbbab5d2f2278b62b79be107985fb69a2f819aa0",
+    "cpu_repack_mib": 25962.19,
+    "cpu_mapped_mib": 3446.26,
+    "layout": "q1_0 expanded to q8_0 4x8 ±1 (ARM i8mm)",
+    "results": [
+      {"threads": 1, "pp128_avg_ts": 2.943860, "tg128_avg_ts": 1.131280, "rss_kib": 30451148, "elapsed": "10:17.44"},
+      {"threads": 96, "pp128_avg_ts": 147.033547, "tg128_avg_ts": 12.111954, "rss_kib": 30436936, "elapsed": "0:54.00"}
+    ]
+  },
+  "production_cap": {
+    "ram_budget_bytes": 68719476736,
+    "rss_under_cap": true,
+    "peak_rss_kib": 30451148,
+    "peak_rss_gib": 29.04,
+    "cap_gib": 64
+  },
+  "window_utc": {
+    "started": "2026-08-22T11:18:35Z",
+    "finished": "2026-08-22T11:29:47Z"
+  },
+  "raw_artifacts": "docs/r8g-bonsai-2026-08-22-rerun/"
+}

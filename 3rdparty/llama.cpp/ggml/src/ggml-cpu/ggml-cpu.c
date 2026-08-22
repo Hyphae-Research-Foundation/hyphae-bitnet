@@ -16,6 +16,7 @@
 #include "ggml-quants.h"
 #include "ggml-cpu-i2s.h"
 #include "common.h"
+#include "celiums-exact.h"
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h> // using malloc.h with MSC/MINGW
@@ -1241,7 +1242,7 @@ static void ggml_compute_forward_mul_mat_one_chunk(
                              src0_row + iir0 * nb01 / 4, nb01,
                             src1_col_de, 0, 16);
                         for (int row = 0; row < 16; row++) {
-                            tmp[row] = (tmp[row] - act_sums[ir1]) * post_scales[ir1];
+                            tmp[row] = celiums_exact_i2s_recover(tmp[row], act_sums[ir1], post_scales[ir1]);
                         }
                     } else {
                         // Slow path: process rows one by one
@@ -1249,7 +1250,8 @@ static void ggml_compute_forward_mul_mat_one_chunk(
                             vec_dot(ne00, &tmp[ir0 - iir0], 0,
                                 src0_row + ir0 * nb01 / 4, 0,
                                 src1_col_de, 0, 1);
-                            tmp[ir0 - iir0] = (tmp[ir0 - iir0] - act_sums[ir1]) * post_scales[ir1];
+                            tmp[ir0 - iir0] = celiums_exact_i2s_recover(
+                                tmp[ir0 - iir0], act_sums[ir1], post_scales[ir1]);
                         }
                     }
 
@@ -1542,9 +1544,10 @@ UseGgmlGemm2:;
         const int64_t fallback_start_us = i2s_profile ? ggml_time_us() : 0;
         int64_t postprocess_us = 0;
         uint64_t postprocessed_values = 0;
-        const void * src1_wdata = (src1->type == vec_dot_type) ? src1->data : params->wdata;
-        const size_t i2s_row_size = ggml_row_size(vec_dot_type, ne10);
-        const size_t src1_col_stride = src1_cont || src1->type != vec_dot_type ? i2s_row_size : nb11;
+    const void * src1_wdata = (src1->type == vec_dot_type) ? src1->data : params->wdata;
+    const size_t i2s_row_size = ggml_row_size(vec_dot_type, ne10);
+    const bool src1_cont = ggml_is_contiguous(src1);
+    const size_t src1_col_stride = src1_cont || src1->type != vec_dot_type ? i2s_row_size : nb11;
 
         const int64_t matmul_num_cols = 4; // gemm processes 4 columns at a time
         int64_t src0_start = (ith * ne01) / nth;
@@ -1577,7 +1580,7 @@ UseGgmlGemm2:;
                     const float post_scale = post_scales[col_start + col];
                     const int32_t asum = act_sums[col_start + col];
                     for (int64_t row = 0; row < n_rows; row++) {
-                        dst_row[row] = (tmp[col * n_rows + row] - asum) * post_scale;
+                        dst_row[row] = celiums_exact_i2s_recover(tmp[col * n_rows + row], asum, post_scale);
                     }
                     if (i2s_profile) {
                         postprocess_us += ggml_time_us() - postprocess_start_us;
@@ -1601,7 +1604,7 @@ UseGgmlGemm2:;
                 const float post_scale = post_scales[iter];
                 const int32_t asum = act_sums[iter];
                 for (int64_t row = 0; row < n_rows; row++) {
-                    dst_row[row] = (tmp[row] - asum) * post_scale;
+                    dst_row[row] = celiums_exact_i2s_recover(tmp[row], asum, post_scale);
                 }
                 if (i2s_profile) {
                     postprocess_us += ggml_time_us() - postprocess_start_us;
@@ -4009,6 +4012,16 @@ int ggml_cpu_has_matmul_int8(void) {
 #else
     return 0;
 #endif
+}
+
+static int ggml_cpu_repack_enabled = 1;
+
+void ggml_cpu_set_repack_enabled(int enabled) {
+    ggml_cpu_repack_enabled = enabled ? 1 : 0;
+}
+
+int ggml_cpu_get_repack_enabled(void) {
+    return ggml_cpu_repack_enabled;
 }
 
 int ggml_cpu_get_sve_cnt(void) {

@@ -1,3 +1,15 @@
+if (NOT TARGET celiums-exact)
+    add_library(celiums-exact STATIC ${CMAKE_CURRENT_LIST_DIR}/celiums-exact.c)
+    set_target_properties(celiums-exact PROPERTIES POSITION_INDEPENDENT_CODE ON C_STANDARD 11)
+    target_include_directories(celiums-exact PUBLIC
+        ${CMAKE_CURRENT_LIST_DIR}
+        ${CMAKE_CURRENT_LIST_DIR}/..
+        ${CMAKE_CURRENT_LIST_DIR}/../include)
+    if (TARGET ggml-base)
+        target_link_libraries(celiums-exact PRIVATE ggml-base)
+    endif()
+endif()
+
 function(ggml_add_cpu_backend_features cpu_name arch)
     # The feature detection code is compiled as a separate target so that
     # it can be built without the architecture flags
@@ -25,6 +37,7 @@ function(ggml_add_cpu_backend_variant_impl tag_name)
     endif()
 
     ggml_add_backend_library(${GGML_CPU_NAME})
+    target_link_libraries(${GGML_CPU_NAME} PUBLIC celiums-exact)
 
     list (APPEND GGML_CPU_SOURCES
         ggml-cpu/ggml-cpu.c

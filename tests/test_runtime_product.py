@@ -20,6 +20,9 @@ MODEL = Path(os.environ.get(
     "CELIUMS_BITNET_TEST_MODEL",
     ROOT / "models" / "BitNet-b1.58-2B-4T" / "ggml-model-i2_s.gguf",
 ))
+BONSAI_MODEL = Path(os.environ["CELIUMS_BONSAI_TEST_MODEL"]) if os.environ.get(
+    "CELIUMS_BONSAI_TEST_MODEL"
+) else None
 VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
 
@@ -46,6 +49,10 @@ class RuntimeProductTests(unittest.TestCase):
     def require_model(self):
         if not MODEL.is_file():
             self.skipTest(f"integration model fixture is unavailable: {MODEL}")
+
+    def require_bonsai_model(self):
+        if BONSAI_MODEL is None or not BONSAI_MODEL.is_file():
+            self.skipTest("Bonsai integration model fixture is unavailable")
 
     def test_runtime_cli_identity(self):
         executable = binary()
@@ -296,6 +303,30 @@ class RuntimeProductTests(unittest.TestCase):
         ], cwd=ROOT, check=True, capture_output=True, text=True).stdout
         rows = [json.loads(line) for line in output.splitlines()]
         self.assertEqual([row["test"] for row in rows], ["pp4", "tg2"])
+        self.assertTrue(all(row["model_family"] == "bitnet-b1.58-i2_s" for row in rows))
+
+    def test_bonsai_requires_explicit_family_and_runs(self):
+        self.require_bonsai_model()
+        rejected = subprocess.run([
+            str(self.require_binary()), "validate", "--model", str(BONSAI_MODEL),
+        ], cwd=ROOT, capture_output=True, text=True)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("unsupported strict model", rejected.stderr)
+
+        validated = subprocess.run([
+            str(self.require_binary()), "validate", "--model", str(BONSAI_MODEL),
+            "--model-family", "bonsai",
+        ], cwd=ROOT, check=True, capture_output=True, text=True).stdout
+        self.assertIn("model_family: bonsai-qwen35-q1_0", validated)
+
+        rows = subprocess.run([
+            str(self.require_binary()), "bench", "--model", str(BONSAI_MODEL),
+            "--model-family", "bonsai", "-p", "4", "-n", "1", "-t", "1",
+            "-r", "1", "-b", "8", "-ub", "8",
+        ], cwd=ROOT, check=True, capture_output=True, text=True).stdout.splitlines()
+        self.assertEqual([json.loads(row)["model_family"] for row in rows], [
+            "bonsai-qwen35-q1_0", "bonsai-qwen35-q1_0",
+        ])
 
     def test_native_server_openai_completion_and_authentication(self):
         self.require_model()

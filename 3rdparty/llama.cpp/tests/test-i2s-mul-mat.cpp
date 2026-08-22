@@ -1,5 +1,6 @@
 #include "ggml.h"
 #include "ggml-cpu.h"
+#include "celiums-exact.h"
 
 #include <cmath>
 #include <cstdint>
@@ -74,6 +75,17 @@ static int run_case(int64_t m, int64_t n, int64_t k, int64_t planes, int threads
             const float expected = scale > 0.0f ? dot/scale : 0.0f;
             const float actual = got[token*m + row];
             failed = failed || !std::isfinite(actual) || std::fabs(actual - expected) > 1e-3f;
+            if (scale > 0.0f) {
+                int32_t unsigned_dot = 0;
+                int32_t act_sum = 0;
+                for (int64_t col = 0; col < k; col++) {
+                    unsigned_dot += (logical_weights[row*k + col] + 1) * quantized[col];
+                    act_sum += quantized[col];
+                }
+                const float recovered = celiums_exact_i2s_recover(
+                    (float) unsigned_dot, act_sum, 1.0f / scale);
+                failed = failed || std::fabs(recovered - expected) > 1e-3f;
+            }
         }
     }
 
@@ -85,6 +97,7 @@ static int run_case(int64_t m, int64_t n, int64_t k, int64_t planes, int threads
 }
 
 int main() {
+    printf("celiums_exact_i2s_recover linked; I2_S mul_mat uses exact (D-S)*rho\n");
     int failures = 0;
     for (int threads : {1, 2, 4}) {
         failures += run_case(5, 1, 128, 1, threads, false);

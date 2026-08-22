@@ -4,24 +4,36 @@
 
 #include "chat.h"
 
+extern "C" void ggml_cpu_set_repack_enabled(int enabled);
+
 #include <atomic>
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <mutex>
 #include <new>
 #include <string>
 #include <vector>
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 struct celiums_bitnet_runtime {
     std::atomic<uint32_t> references { 1 };
     std::atomic<bool> active { true };
+    uint64_t ram_budget_bytes = 0;
 };
 
 struct celiums_bitnet_model {
     celiums_bitnet_runtime * runtime;
     llama_model * handle;
+    celiums_bitnet_model_family family;
     std::atomic<uint32_t> references { 1 };
     mutable std::mutex chat_mutex;
     mutable common_chat_templates_ptr chat_templates;
@@ -55,6 +67,26 @@ uint32_t backend_users = 0;
 
 bool valid_header(size_t struct_size, uint32_t api_version, size_t expected_size) {
     return struct_size >= expected_size && api_version == CELIUMS_BITNET_API_VERSION;
+}
+
+bool valid_family(celiums_bitnet_model_family family) {
+    return family == CELIUMS_BITNET_MODEL_FAMILY_BITNET_B158_I2S ||
+        family == CELIUMS_BITNET_MODEL_FAMILY_BONSAI_QWEN35_Q1_0;
+}
+
+bool matches_family(
+        celiums_bitnet_model_family family,
+        const char * architecture,
+        const char * file_type) {
+    switch (family) {
+        case CELIUMS_BITNET_MODEL_FAMILY_BITNET_B158_I2S:
+            return std::strcmp(architecture, "bitnet-b1.58") == 0 && std::strcmp(file_type, "41") == 0;
+        case CELIUMS_BITNET_MODEL_FAMILY_BONSAI_QWEN35_Q1_0:
+            return std::strcmp(architecture, "qwen35") == 0 && std::strcmp(file_type, "40") == 0;
+        case CELIUMS_BITNET_MODEL_FAMILY_UNKNOWN:
+            return false;
+    }
+    return false;
 }
 
 void release_runtime(celiums_bitnet_runtime * runtime) {
@@ -251,18 +283,28 @@ const char * celiums_bitnet_status_string(celiums_bitnet_status status) {
         case CELIUMS_BITNET_STATUS_CANCELLED:              return "cancelled";
         case CELIUMS_BITNET_STATUS_CONTEXT_FULL:           return "context full";
         case CELIUMS_BITNET_STATUS_CALLBACK_ABORTED:       return "stream callback aborted";
+        case CELIUMS_BITNET_STATUS_RAM_BUDGET_EXCEEDED:    return "ram budget exceeded";
     }
     return "unknown status";
 }
 
+const char * celiums_bitnet_model_family_string(celiums_bitnet_model_family family) {
+    switch (family) {
+        case CELIUMS_BITNET_MODEL_FAMILY_BITNET_B158_I2S: return "bitnet-b1.58-i2_s";
+        case CELIUMS_BITNET_MODEL_FAMILY_BONSAI_QWEN35_Q1_0: return "bonsai-qwen35-q1_0";
+        case CELIUMS_BITNET_MODEL_FAMILY_UNKNOWN: return "unknown";
+    }
+    return "unknown";
+}
+
 celiums_bitnet_runtime_options celiums_bitnet_runtime_default_options(void) {
-    return { sizeof(celiums_bitnet_runtime_options), CELIUMS_BITNET_API_VERSION };
+    return { sizeof(celiums_bitnet_runtime_options), CELIUMS_BITNET_API_VERSION, 0 };
 }
 
 celiums_bitnet_model_options celiums_bitnet_model_default_options(void) {
     return {
         sizeof(celiums_bitnet_model_options), CELIUMS_BITNET_API_VERSION,
-        true, false, false,
+        true, false, false, true,
     };
 }
 
@@ -270,7 +312,165 @@ celiums_bitnet_session_options celiums_bitnet_session_default_options(void) {
     return {
         sizeof(celiums_bitnet_session_options), CELIUMS_BITNET_API_VERSION,
         2048, 512, 512, 2, 2,
+        1, 0, true,
     };
+}
+
+uint64_t celiums_bitnet_host_ram_bytes(void) {
+#if defined(_WIN32)
+    MEMORYSTATUSEX status;
+    status.dwLength = sizeof(status);
+    if (!GlobalMemoryStatusEx(&status)) {
+        return 0;
+    }
+    return (uint64_t) status.ullTotalPhys;
+#else
+    const long pages = sysconf(_SC_PHYS_PAGES);
+    const long page = sysconf(_SC_PAGESIZE);
+    if (pages <= 0 || page <= 0) {
+        return 0;
+    }
+    return (uint64_t) pages * (uint64_t) page;
+#endif
+}
+
+namespace {
+
+uint64_t packed_file_bytes(const char * path) {
+    if (!path || path[0] == '\0') {
+        return 0;
+    }
+#if defined(_WIN32)
+    WIN32_FILE_ATTRIBUTE_DATA info;
+    if (!GetFileAttributesExA(path, GetFileExInfoStandard, &info)) {
+        return 0;
+    }
+    ULARGE_INTEGER size;
+    size.LowPart = info.nFileSizeLow;
+    size.HighPart = info.nFileSizeHigh;
+    return (uint64_t) size.QuadPart;
+#else
+    struct stat info;
+    if (stat(path, &info) != 0 || info.st_size < 0) {
+        return 0;
+    }
+    return (uint64_t) info.st_size;
+#endif
+}
+
+uint64_t compute_layout_bytes(bool use_compute_layout, uint64_t packed_model_bytes) {
+    if (!use_compute_layout || packed_model_bytes == 0) {
+        return 0;
+    }
+#if defined(__aarch64__) || defined(__arm__)
+    /* ARM i8mm expands Q1 1-bit to q8_0 4x8 ±1 (~8x the packed image). */
+    return packed_model_bytes * 8ull;
+#else
+    /* x86 VNNI 4x8 stays bit-packed; CPU_REPACK is about one extra packed copy. */
+    return packed_model_bytes;
+#endif
+}
+
+uint32_t model_meta_u32(const llama_model * model, const char * key) {
+    char buffer[64];
+    if (!model || !key || llama_model_meta_val_str(model, key, buffer, sizeof(buffer)) < 0) {
+        return 0;
+    }
+    char * end = nullptr;
+    const unsigned long value = std::strtoul(buffer, &end, 10);
+    if (end == buffer) {
+        return 0;
+    }
+    return (uint32_t) value;
+}
+
+/* Same K/V tensor geometry llama_kv_cache allocates: F16 GQA rows. */
+uint64_t kv_cache_bytes(const llama_model * model, uint32_t n_ctx, uint32_t n_seq) {
+    const int32_t n_embd = llama_model_n_embd(model);
+    const int32_t n_layer = llama_model_n_layer(model);
+    const int32_t n_head = llama_model_n_head(model);
+    const int32_t n_head_kv = llama_model_n_head_kv(model);
+    if (n_embd <= 0 || n_layer <= 0 || n_head <= 0 || n_head_kv <= 0 || n_ctx == 0 || n_seq == 0) {
+        return (uint64_t) n_seq * (uint64_t) n_ctx * 131072ull;
+    }
+    const uint64_t n_embd_head = (uint64_t) n_embd / (uint64_t) n_head;
+    const uint64_t kv_per_cell = n_embd_head * (uint64_t) n_head_kv * 2ull * 2ull;
+    return (uint64_t) n_seq * (uint64_t) n_ctx * (uint64_t) n_layer * kv_per_cell;
+}
+
+uint64_t recurrent_state_bytes(const llama_model * model, uint32_t n_seq) {
+    char architecture[64];
+    if (llama_model_meta_val_str(model, "general.architecture", architecture, sizeof(architecture)) < 0) {
+        return 0;
+    }
+    char inner_key[96];
+    char state_key[96];
+    if (std::snprintf(inner_key, sizeof(inner_key), "%s.ssm.inner_size", architecture) < 0 ||
+            std::snprintf(state_key, sizeof(state_key), "%s.ssm.state_size", architecture) < 0) {
+        return 0;
+    }
+    const uint32_t inner = model_meta_u32(model, inner_key);
+    const uint32_t state = model_meta_u32(model, state_key);
+    const int32_t n_layer = llama_model_n_layer(model);
+    if (inner == 0 || state == 0 || n_layer <= 0 || n_seq == 0) {
+        return 0;
+    }
+    return (uint64_t) n_seq * (uint64_t) n_layer * (uint64_t) inner * (uint64_t) state * 4ull;
+}
+
+uint64_t compute_scratch_bytes(const llama_model * model, uint32_t ubatch) {
+    const int32_t n_embd = llama_model_n_embd(model);
+    const int32_t n_layer = llama_model_n_layer(model);
+    if (n_embd <= 0 || n_layer <= 0 || ubatch == 0) {
+        return 0;
+    }
+    return (uint64_t) ubatch * (uint64_t) n_embd * (uint64_t) n_layer * 4ull;
+}
+
+} // namespace
+
+uint64_t celiums_bitnet_default_ram_budget_bytes(void) {
+    const uint64_t host = celiums_bitnet_host_ram_bytes();
+    if (host == 0) {
+        return 256ull * 1024ull * 1024ull;
+    }
+    const uint64_t half = host / 2;
+    const uint64_t ten_percent = host / 10;
+    const uint64_t reserve = std::max<uint64_t>(4ull * 1024ull * 1024ull * 1024ull, ten_percent);
+    if (host <= reserve) {
+        return host / 2;
+    }
+    const uint64_t capped = host - reserve;
+    const uint64_t ninety = (host / 10) * 9;
+    return std::min(half, std::min(capped, ninety));
+}
+
+uint64_t celiums_bitnet_estimate_session_ram_bytes(
+        const celiums_bitnet_session_options * options,
+        uint64_t packed_model_bytes) {
+    const celiums_bitnet_session_options resolved =
+        options ? *options : celiums_bitnet_session_default_options();
+    const uint32_t n_seq = resolved.n_seq == 0 ? 1u : resolved.n_seq;
+    /* No model handle: 128 KiB/token covers I2_S F16 GQA KV (76.8 KiB/token). */
+    const uint64_t seq_bytes =
+        (uint64_t) n_seq * ((uint64_t) resolved.context_size * 131072ull + 1048576ull);
+    return seq_bytes + compute_layout_bytes(resolved.use_compute_layout, packed_model_bytes);
+}
+
+uint64_t celiums_bitnet_estimate_session_ram_bytes_for_model(
+        const celiums_bitnet_model * model,
+        const celiums_bitnet_session_options * options) {
+    const celiums_bitnet_session_options resolved =
+        options ? *options : celiums_bitnet_session_default_options();
+    if (!model || !model->handle) {
+        return celiums_bitnet_estimate_session_ram_bytes(options, 0);
+    }
+    const uint32_t n_seq = resolved.n_seq == 0 ? 1u : resolved.n_seq;
+    const uint64_t packed = llama_model_size(model->handle);
+    return compute_layout_bytes(resolved.use_compute_layout, packed) +
+        kv_cache_bytes(model->handle, resolved.context_size, n_seq) +
+        recurrent_state_bytes(model->handle, n_seq) +
+        compute_scratch_bytes(model->handle, resolved.ubatch_size);
 }
 
 celiums_bitnet_generation_options celiums_bitnet_generation_default_options(void) {
@@ -298,6 +498,9 @@ celiums_bitnet_status celiums_bitnet_runtime_create(
             llama_backend_init();
         }
     }
+    created->ram_budget_bytes = (options && options->ram_budget_bytes)
+        ? options->ram_budget_bytes
+        : celiums_bitnet_default_ram_budget_bytes();
     *runtime = created;
     return CELIUMS_BITNET_STATUS_OK;
 }
@@ -315,13 +518,36 @@ celiums_bitnet_status celiums_bitnet_model_load(
         const char * path,
         const celiums_bitnet_model_options * options,
         celiums_bitnet_model ** model) {
-    if (!runtime || !runtime->active.load(std::memory_order_acquire) || !path || path[0] == '\0' || !model ||
+    return celiums_bitnet_model_load_family(
+        runtime, path, CELIUMS_BITNET_MODEL_FAMILY_BITNET_B158_I2S, options, model);
+}
+
+celiums_bitnet_status celiums_bitnet_model_load_family(
+        celiums_bitnet_runtime * runtime,
+        const char * path,
+        celiums_bitnet_model_family family,
+        const celiums_bitnet_model_options * options,
+        celiums_bitnet_model ** model) {
+    if (!model) {
+        return CELIUMS_BITNET_STATUS_INVALID_ARGUMENT;
+    }
+    *model = nullptr;
+    if (!runtime || !runtime->active.load(std::memory_order_acquire) || !path || path[0] == '\0' ||
+            !valid_family(family) ||
             (options && !valid_header(
                 options->struct_size, options->api_version, sizeof(celiums_bitnet_model_options)))) {
         return CELIUMS_BITNET_STATUS_INVALID_ARGUMENT;
     }
-    *model = nullptr;
     const celiums_bitnet_model_options resolved = options ? *options : celiums_bitnet_model_default_options();
+    const uint64_t packed = packed_file_bytes(path);
+    if (packed == 0) {
+        return CELIUMS_BITNET_STATUS_MODEL_LOAD_FAILED;
+    }
+    const uint64_t needed = packed + compute_layout_bytes(resolved.use_compute_layout, packed);
+    if (needed > runtime->ram_budget_bytes) {
+        return CELIUMS_BITNET_STATUS_RAM_BUDGET_EXCEEDED;
+    }
+    ggml_cpu_set_repack_enabled(resolved.use_compute_layout ? 1 : 0);
     llama_model_params params = llama_model_default_params();
     params.n_gpu_layers = 0;
     params.use_mmap = resolved.use_mmap;
@@ -333,13 +559,17 @@ celiums_bitnet_status celiums_bitnet_model_load(
     }
     char architecture[64];
     char file_type[32];
-    if (llama_model_meta_val_str(handle, "general.architecture", architecture, sizeof(architecture)) < 0 ||
-            llama_model_meta_val_str(handle, "general.file_type", file_type, sizeof(file_type)) < 0 ||
-            std::strcmp(architecture, "bitnet-b1.58") != 0 || std::strcmp(file_type, "41") != 0) {
+    const int32_t architecture_size = llama_model_meta_val_str(
+        handle, "general.architecture", architecture, sizeof(architecture));
+    const int32_t file_type_size = llama_model_meta_val_str(
+        handle, "general.file_type", file_type, sizeof(file_type));
+    if (architecture_size < 0 || (size_t) architecture_size >= sizeof(architecture) ||
+            file_type_size < 0 || (size_t) file_type_size >= sizeof(file_type) ||
+            !matches_family(family, architecture, file_type)) {
         llama_model_free(handle);
         return CELIUMS_BITNET_STATUS_UNSUPPORTED_MODEL;
     }
-    auto * loaded = new (std::nothrow) celiums_bitnet_model { runtime, handle };
+    auto * loaded = new (std::nothrow) celiums_bitnet_model { runtime, handle, family };
     if (!loaded) {
         llama_model_free(handle);
         return CELIUMS_BITNET_STATUS_INTERNAL_ERROR;
@@ -353,19 +583,33 @@ celiums_bitnet_status celiums_bitnet_model_validate_strict(
         celiums_bitnet_runtime * runtime,
         const char * path,
         celiums_bitnet_model_info * info) {
+    return celiums_bitnet_model_validate_family(
+        runtime, path, CELIUMS_BITNET_MODEL_FAMILY_BITNET_B158_I2S, info);
+}
+
+celiums_bitnet_status celiums_bitnet_model_validate_family(
+        celiums_bitnet_runtime * runtime,
+        const char * path,
+        celiums_bitnet_model_family family,
+        celiums_bitnet_model_info * info) {
     if (!info || !valid_header(info->struct_size, info->api_version, sizeof(celiums_bitnet_model_info))) {
         return CELIUMS_BITNET_STATUS_INVALID_ARGUMENT;
     }
     celiums_bitnet_model_options options = celiums_bitnet_model_default_options();
     options.check_tensors = true;
     celiums_bitnet_model * model = nullptr;
-    const celiums_bitnet_status status = celiums_bitnet_model_load(runtime, path, &options, &model);
+    const celiums_bitnet_status status = celiums_bitnet_model_load_family(
+        runtime, path, family, &options, &model);
     if (status != CELIUMS_BITNET_STATUS_OK) {
         return status;
     }
     const celiums_bitnet_status info_status = celiums_bitnet_model_get_info(model, info);
     celiums_bitnet_model_destroy(model);
     return info_status;
+}
+
+celiums_bitnet_model_family celiums_bitnet_model_get_family(const celiums_bitnet_model * model) {
+    return model ? model->family : CELIUMS_BITNET_MODEL_FAMILY_UNKNOWN;
 }
 
 void celiums_bitnet_model_destroy(celiums_bitnet_model * model) {
@@ -469,8 +713,15 @@ celiums_bitnet_status celiums_bitnet_session_create(
     *session = nullptr;
     const celiums_bitnet_session_options resolved = options ? *options : celiums_bitnet_session_default_options();
     if (resolved.context_size == 0 || resolved.batch_size == 0 || resolved.ubatch_size == 0 ||
-            resolved.threads <= 0 || resolved.threads_batch <= 0) {
+            resolved.threads <= 0 || resolved.threads_batch <= 0 || resolved.n_seq == 0) {
         return CELIUMS_BITNET_STATUS_INVALID_ARGUMENT;
+    }
+    const uint64_t budget = resolved.ram_budget_bytes
+        ? resolved.ram_budget_bytes
+        : (model->runtime ? model->runtime->ram_budget_bytes : celiums_bitnet_default_ram_budget_bytes());
+    const uint64_t needed = celiums_bitnet_estimate_session_ram_bytes_for_model(model, &resolved);
+    if (needed > budget) {
+        return CELIUMS_BITNET_STATUS_RAM_BUDGET_EXCEEDED;
     }
     llama_context_params params = llama_context_default_params();
     params.n_ctx = resolved.context_size;
@@ -478,6 +729,7 @@ celiums_bitnet_status celiums_bitnet_session_create(
     params.n_ubatch = resolved.ubatch_size;
     params.n_threads = resolved.threads;
     params.n_threads_batch = resolved.threads_batch;
+    params.n_seq_max = resolved.n_seq;
     params.no_perf = false;
     llama_context * context = llama_init_from_model(model->handle, params);
     if (!context) {

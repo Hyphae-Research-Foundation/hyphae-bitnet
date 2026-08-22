@@ -15,6 +15,12 @@ int celiums_runtime_server(int argc, char ** argv);
 
 namespace {
 
+celiums_bitnet_model_family parse_model_family(const char * value) {
+    if (std::strcmp(value, "bitnet") == 0) return CELIUMS_BITNET_MODEL_FAMILY_BITNET_B158_I2S;
+    if (std::strcmp(value, "bonsai") == 0) return CELIUMS_BITNET_MODEL_FAMILY_BONSAI_QWEN35_Q1_0;
+    throw std::invalid_argument("model family must be 'bitnet' or 'bonsai'");
+}
+
 void print_help(const char * program) {
     printf("Celiums BitNet Runtime %s\n\n", celiums_bitnet_version());
     printf("Usage: %s <command> [options]\n\n", program);
@@ -52,6 +58,10 @@ struct run_options {
     float top_p = 0.95f;
     float temperature = 0.8f;
     uint32_t seed = UINT32_MAX;
+    uint32_t n_seq = 1;
+    uint64_t ram_budget_bytes = 0;
+    bool use_compute_layout = true;
+    celiums_bitnet_model_family family = CELIUMS_BITNET_MODEL_FAMILY_BITNET_B158_I2S;
     std::vector<const char *> stop_sequences;
 };
 
@@ -68,6 +78,10 @@ void print_run_help(const char * program) {
     printf("  --top-p N                nucleus sampling\n");
     printf("  --seed N                 sampling seed\n");
     printf("  --stop TEXT              repeatable stop sequence\n");
+    printf("  --model-family FAMILY    bitnet (default) or bonsai\n");
+    printf("  --n-seq N                decode slots sharing the weight image (default 1)\n");
+    printf("  --ram-budget-bytes N     RAM cap; 0 = auto (half host, with headroom)\n");
+    printf("  --compute-layout 0|1     in-RAM compute image (default 1)\n");
 }
 
 int parse_int(const char * value) {
@@ -111,6 +125,7 @@ int run_inference(int argc, char ** argv) {
             }
             const char * value = argv[++index];
             if (argument == "--model" || argument == "-m") options.model = value;
+            else if (argument == "--model-family") options.family = parse_model_family(value);
             else if (argument == "--prompt" || argument == "-p") options.prompt = value;
             else if (argument == "--n-predict" || argument == "-n") options.max_tokens = parse_int(value);
             else if (argument == "--ctx-size" || argument == "-c") options.context_size = parse_int(value);
@@ -123,6 +138,15 @@ int run_inference(int argc, char ** argv) {
             else if (argument == "--top-p") options.top_p = parse_float(value);
             else if (argument == "--seed") options.seed = (uint32_t) std::stoul(value);
             else if (argument == "--stop") options.stop_sequences.push_back(value);
+            else if (argument == "--n-seq") {
+                const int parsed = parse_int(value);
+                if (parsed <= 0) {
+                    throw std::invalid_argument("n-seq must be positive");
+                }
+                options.n_seq = (uint32_t) parsed;
+            }
+            else if (argument == "--ram-budget-bytes") options.ram_budget_bytes = std::stoull(value);
+            else if (argument == "--compute-layout") options.use_compute_layout = parse_int(value) != 0;
             else {
                 fprintf(stderr, "celiums-bitnet run: unknown argument '%s'\n", argument.c_str());
                 return 2;
@@ -144,10 +168,13 @@ int run_inference(int argc, char ** argv) {
     celiums_bitnet_status status;
 
     celiums_bitnet_runtime_options runtime_options = celiums_bitnet_runtime_default_options();
+    runtime_options.ram_budget_bytes = options.ram_budget_bytes;
     status = celiums_bitnet_runtime_create(&runtime_options, &runtime);
     if (status == CELIUMS_BITNET_STATUS_OK) {
         celiums_bitnet_model_options model_options = celiums_bitnet_model_default_options();
-        status = celiums_bitnet_model_load(runtime, options.model, &model_options, &model);
+        model_options.use_compute_layout = options.use_compute_layout;
+        status = celiums_bitnet_model_load_family(
+            runtime, options.model, options.family, &model_options, &model);
     }
     if (status == CELIUMS_BITNET_STATUS_OK) {
         celiums_bitnet_session_options session_options = celiums_bitnet_session_default_options();
@@ -156,6 +183,9 @@ int run_inference(int argc, char ** argv) {
         session_options.ubatch_size = options.ubatch_size;
         session_options.threads = options.threads;
         session_options.threads_batch = options.threads_batch;
+        session_options.n_seq = options.n_seq;
+        session_options.ram_budget_bytes = options.ram_budget_bytes;
+        session_options.use_compute_layout = options.use_compute_layout;
         status = celiums_bitnet_session_create(model, &session_options, &session);
     }
     if (status == CELIUMS_BITNET_STATUS_OK) {
@@ -196,11 +226,19 @@ int serve(int argc, char ** argv) {
 
 int validate_model(int argc, char ** argv) {
     const char * path = nullptr;
+    celiums_bitnet_model_family family = CELIUMS_BITNET_MODEL_FAMILY_BITNET_B158_I2S;
     for (int index = 1; index < argc; ++index) {
         if ((strcmp(argv[index], "--model") == 0 || strcmp(argv[index], "-m") == 0) && index + 1 < argc) {
             path = argv[++index];
+        } else if (strcmp(argv[index], "--model-family") == 0 && index + 1 < argc) {
+            try {
+                family = parse_model_family(argv[++index]);
+            } catch (const std::exception & error) {
+                fprintf(stderr, "celiums-bitnet validate: %s\n", error.what());
+                return 2;
+            }
         } else if (strcmp(argv[index], "--help") == 0 || strcmp(argv[index], "-h") == 0) {
-            printf("Usage: %s --model MODEL.gguf\n", argv[0]);
+            printf("Usage: %s --model MODEL.gguf [--model-family bitnet|bonsai]\n", argv[0]);
             return 0;
         } else {
             fprintf(stderr, "celiums-bitnet validate: unknown argument '%s'\n", argv[index]);
@@ -219,7 +257,7 @@ int validate_model(int argc, char ** argv) {
     info.struct_size = sizeof(info);
     info.api_version = CELIUMS_BITNET_API_VERSION;
     if (status == CELIUMS_BITNET_STATUS_OK) {
-        status = celiums_bitnet_model_validate_strict(runtime, path, &info);
+        status = celiums_bitnet_model_validate_family(runtime, path, family, &info);
     }
     if (status != CELIUMS_BITNET_STATUS_OK) {
         fprintf(stderr, "celiums-bitnet validate: %s\n", celiums_bitnet_status_string(status));
@@ -234,6 +272,7 @@ int validate_model(int argc, char ** argv) {
         printf("context_length: %d\n", info.context_length);
         printf("embedding_length: %d\n", info.embedding_length);
         printf("layers: %d\n", info.layer_count);
+        printf("model_family: %s\n", celiums_bitnet_model_family_string(family));
     }
     celiums_bitnet_runtime_destroy(runtime);
     return status == CELIUMS_BITNET_STATUS_OK ? 0 : 1;

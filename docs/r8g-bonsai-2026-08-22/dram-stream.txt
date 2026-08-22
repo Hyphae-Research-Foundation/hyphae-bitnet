@@ -1,0 +1,45 @@
+# Linux ip-10-42-1-61 6.17.0-1019-aws #19~24.04.1-Ubuntu SMP Tue Jun 23 18:34:05 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux
+# nproc=96  mem=
+CPU(s):                                  96
+On-line CPU(s) list:                     0-95
+Model name:                              Neoverse-V2
+Thread(s) per core:                      1
+NUMA node(s):                            1
+NUMA node0 CPU(s):                       0-95
+
+======== threads=1 ========
+# graviton dram  array=8GiB  threads=1  reps=5  n=1073741824
+kernel       best_s  gbs_traffic
+copy         0.3088        55.64
+scale        0.3066        56.04
+add          0.5220        49.36
+triad        0.5221        49.36
+read         0.7694        11.16
+
+======== threads=24 ========
+# graviton dram  array=8GiB  threads=24  reps=5  n=1073741824
+kernel       best_s  gbs_traffic
+copy         0.0455       377.51
+scale        0.0454       378.21
+add          0.0716       359.72
+triad        0.0716       359.90
+read         0.0322       266.98
+
+======== threads=48 ========
+# graviton dram  array=8GiB  threads=48  reps=5  n=1073741824
+kernel       best_s  gbs_traffic
+copy         0.0404       425.64
+scale        0.0403       425.89
+add          0.0640       402.87
+triad        0.0640       402.51
+read         0.0208       412.90
+
+======== threads=96 ========
+# graviton dram  array=8GiB  threads=96  reps=5  n=1073741824
+kernel       best_s  gbs_traffic
+copy         0.0388       442.26
+scale        0.0388       442.48
+add          0.0622       414.26
+triad        0.0624       413.24
+read         0.0176       489.32
+

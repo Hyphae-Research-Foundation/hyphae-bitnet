@@ -1,0 +1,1 @@
+e23b16fa81b890e8b65e676262b645e8ffa5ae1f6df89dadaf793246826bbd90  /home/ubuntu/bitnet/models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf

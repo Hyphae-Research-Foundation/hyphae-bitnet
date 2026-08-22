@@ -1,0 +1,1 @@
+-rwxrwxr-x 1 ubuntu ubuntu 18K Aug 22 02:26 /home/ubuntu/build-native/bin/llama-bench

@@ -1,0 +1,57 @@
+{
+  "schema": "celiums-bitnet-cross-runtime-benchmark-v1",
+  "date": "2026-08-22",
+  "authority": "aws-r8g-metal-24xl",
+  "note": "Celiums BitNet Runtime 0.3.0 celiums-bitnet bench, Bonsai Q1_0. Not llama.cpp Qwen UD-Q4_K_M. ARM CPU_REPACK 4x8 did not engage (AVX-512 gate).",
+  "system": {
+    "provider": "AWS",
+    "instance_id": "i-061f0a292419e5ae4",
+    "instance_type": "r8g.metal-24xl",
+    "region": "us-east-1",
+    "az": "us-east-1a",
+    "cpu": "Neoverse-V2",
+    "physical_cores": 96,
+    "threads_per_core": 1,
+    "memory_mib": 771072,
+    "isa": ["i8mm", "sve2", "svei8mm", "asimddp", "dotprod"],
+    "compiler": "GCC 13.3.0",
+    "build_type": "Release",
+    "cpu_profile": "native",
+    "march": "neoverse-v2+dotprod+i8mm+sve"
+  },
+  "product": {
+    "release": "0.3.0",
+    "product_commit": "unknown",
+    "engine_commit": "e1002b8be",
+    "engine_tree": "3e44df24acb33ac5fb4f55ae74da6186e692de37",
+    "tool": "celiums-bitnet bench --model-family bonsai"
+  },
+  "settings": {
+    "n_prompt": 128,
+    "n_gen": 128,
+    "batch": 128,
+    "ubatch": 128,
+    "repetitions": 3,
+    "n_seq_max": 1
+  },
+  "bonsai_q1": {
+    "model": "Bonsai-27B-Q1_0",
+    "architecture": "qwen35",
+    "sha256": "17ef842e47450caeb8eaa3ebfbbab5d2f2278b62b79be107985fb69a2f819aa0",
+    "file_size_gib": 3.53,
+    "params": 2.69e10,
+    "cpu_repack": false,
+    "results": [
+      {"threads": 1, "pp128_avg_ts": 0.528064, "tg128_avg_ts": 0.499503},
+      {"threads": 8, "pp128_avg_ts": 4.188127, "tg128_avg_ts": 3.736417},
+      {"threads": 24, "pp128_avg_ts": 11.643883, "tg128_avg_ts": 9.113103},
+      {"threads": 48, "pp128_avg_ts": 20.938816, "tg128_avg_ts": 14.153472},
+      {"threads": 96, "pp128_avg_ts": 37.681233, "tg128_avg_ts": 18.164302}
+    ]
+  },
+  "window_utc": {
+    "started": "2026-08-22T04:20:14Z",
+    "finished": "2026-08-22T05:05:43Z"
+  },
+  "raw_artifacts": "docs/r8g-bonsai-2026-08-22/"
+}

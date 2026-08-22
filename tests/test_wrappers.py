@@ -36,6 +36,7 @@ class WrapperCommandTests(unittest.TestCase):
         self.assertEqual(command[command.index("-t") + 1], "4")
         self.assertEqual(command[command.index("-tb") + 1], "4")
         self.assertIn("hello world", command)
+        self.assertEqual(command[command.index("--model-family") + 1], "bitnet")
 
     def test_inference_separate_threads(self):
         args = SimpleNamespace(
@@ -57,6 +58,7 @@ class WrapperCommandTests(unittest.TestCase):
             command = server.build_command(args)
         self.assertEqual(command[1], "serve")
         self.assertEqual(command[command.index("-tb") + 1], "12")
+        self.assertEqual(command[command.index("--model-family") + 1], "bitnet")
 
     def test_server_wrapper_defers_bind_policy_to_native_server(self):
         args = SimpleNamespace(
@@ -80,6 +82,60 @@ class WrapperCommandTests(unittest.TestCase):
         self.assertEqual(command[command.index("-b") + 1], "256")
         self.assertEqual(command[command.index("-ub") + 1], "64")
         self.assertNotEqual(command[command.index("-b") + 1], "1")
+        self.assertEqual(command[command.index("--model-family") + 1], "bitnet")
+
+    def test_wrappers_forward_bonsai_family(self):
+        inference_args = SimpleNamespace(
+            model=Path("bonsai.gguf"), model_family="bonsai", n_predict=1, threads=1,
+            threads_batch=1, prompt="hello", ctx_size=128, temperature=0.0,
+        )
+        server_args = SimpleNamespace(
+            model=Path("bonsai.gguf"), model_family="bonsai", ctx_size=128, threads=1,
+            threads_batch=1, host="127.0.0.1", port=8080, api_key_file=None,
+            allow_unauthenticated_remote=False,
+        )
+        benchmark_args = SimpleNamespace(
+            build_dir=ROOT / "build", model=Path("bonsai.gguf"), model_family="bonsai",
+            n_prompt=4, n_token=1, batch=8, ubatch=8, threads=1, repetitions=1,
+            output="jsonl", cpu_mask=None,
+        )
+        with patch.object(inference, "binary_path", return_value=Path("celiums-bitnet")):
+            inference_command = inference.build_command(inference_args)
+        with patch.object(server, "binary_path", return_value=Path("celiums-bitnet")):
+            server_command = server.build_command(server_args)
+        with patch.object(benchmark, "benchmark_binary", return_value=Path("celiums-bitnet")):
+            benchmark_command = benchmark.build_command(benchmark_args)
+        for command in (inference_command, server_command, benchmark_command):
+            self.assertEqual(command[command.index("--model-family") + 1], "bonsai")
+
+    def test_wrappers_forward_ram_lever(self):
+        inference_args = SimpleNamespace(
+            model=Path("model.gguf"), n_predict=1, threads=1, threads_batch=1,
+            prompt="hello", ctx_size=128, temperature=0.0, n_seq=4,
+            ram_budget_bytes=68719476736, compute_layout=1,
+        )
+        server_args = SimpleNamespace(
+            model=Path("model.gguf"), ctx_size=128, threads=1, threads_batch=1,
+            host="127.0.0.1", port=8080, api_key_file=None,
+            allow_unauthenticated_remote=False, n_seq=4,
+            ram_budget_bytes=68719476736, compute_layout=1,
+        )
+        benchmark_args = SimpleNamespace(
+            build_dir=ROOT / "build", model=Path("model.gguf"), n_prompt=4,
+            n_token=1, batch=8, ubatch=8, threads=1, repetitions=1,
+            output="jsonl", cpu_mask=None, n_seq=4,
+            ram_budget_bytes=68719476736, compute_layout=1,
+        )
+        with patch.object(inference, "binary_path", return_value=Path("celiums-bitnet")):
+            inference_command = inference.build_command(inference_args)
+        with patch.object(server, "binary_path", return_value=Path("celiums-bitnet")):
+            server_command = server.build_command(server_args)
+        with patch.object(benchmark, "benchmark_binary", return_value=Path("celiums-bitnet")):
+            benchmark_command = benchmark.build_command(benchmark_args)
+        for command in (inference_command, server_command, benchmark_command):
+            self.assertEqual(command[command.index("--n-seq") + 1], "4")
+            self.assertEqual(command[command.index("--ram-budget-bytes") + 1], "68719476736")
+            self.assertEqual(command[command.index("--compute-layout") + 1], "1")
 
     def test_native_benchmark_rejects_cpu_mask(self):
         args = SimpleNamespace(

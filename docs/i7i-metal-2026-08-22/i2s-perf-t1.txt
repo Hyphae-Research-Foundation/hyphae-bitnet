@@ -1,0 +1,16 @@
+# started on Sat Aug 22 02:36:02 2026
+
+
+ Performance counter stats for '/home/ubuntu/build-native/bin/llama-bench -m /home/ubuntu/bitnet/models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf -p 32 -n 128 -t 1 -b 128 -ub 128 --cpu-strict 1 -ngl 0 --numa isolate -r 3 -o json':
+
+      161474584801      cycles                                                                
+      149863558078      instructions                     #    0.93  insn per cycle            
+        7385076731      cache-references                                                      
+        5748621176      cache-misses                     #   77.84% of all cache refs         
+
+      40.442451575 seconds time elapsed
+
+      40.366413000 seconds user
+       0.068988000 seconds sys
+
+

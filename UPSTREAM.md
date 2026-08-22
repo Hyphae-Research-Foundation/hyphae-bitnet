@@ -19,6 +19,11 @@ the archived repository.
 After reviewing an intentional engine change, update the pin with
 `scripts/compute-engine-tree.sh` and record its output in `cmake/ENGINE_TREE`.
 
+The Bonsai Q1_0 compatibility path includes a Q1_0-only functional port from
+PrismML llama.cpp commits `720e06b1637517188bbf2fb2d0005b7c2204e2d7` and
+`9fcaed763ccda38ea81068ad9d7f991aaddca451`. The port excludes Prism Q2_0,
+whose tensor and file-type identifiers conflict with Celiums TL2 and I2_S.
+
 An upstream update must pass the strict numerical tests, model perplexity tests,
 and hardware benchmark matrix before it can enter a release.
 

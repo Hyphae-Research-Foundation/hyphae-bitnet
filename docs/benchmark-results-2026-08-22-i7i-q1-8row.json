@@ -1,0 +1,80 @@
+{
+  "schema": "celiums-bitnet-cross-runtime-benchmark-v1",
+  "date": "2026-08-22",
+  "authority": "aws-i7i-metal-24xl",
+  "note": "Q1 8-row GEMM weight reuse vs prior RAM-capped VNNI 4-row baseline. Decode GEMV unchanged. Cap 64 GiB. x86 keeps Q1 4x8 bit-packed VNNI (no int8 expand).",
+  "system": {
+    "provider": "AWS",
+    "instance_id": "i-05f286869730e13dd",
+    "instance_type": "i7i.metal-24xl",
+    "region": "us-east-1",
+    "az": "us-east-1a",
+    "public_ip": "54.84.61.78",
+    "cpu": "INTEL(R) XEON(R) PLATINUM 8559C",
+    "physical_cores": 48,
+    "threads_per_core": 2,
+    "vcpus": 96,
+    "isa": ["avx512f", "avx512_vnni", "amx_int8", "f16c"]
+  },
+  "product": {
+    "release": "0.3.0",
+    "product_commit": "24bfe056a",
+    "engine_commit": "e1002b8be",
+    "engine_tree": "3e44df24acb33ac5fb4f55ae74da6186e692de37",
+    "tool": "celiums-bitnet bench --model-family bonsai --compute-layout 1 --ram-budget-bytes 68719476736"
+  },
+  "settings": {
+    "n_prompt": 128,
+    "n_gen": 128,
+    "batch": 128,
+    "ubatch": 128,
+    "repetitions": 3,
+    "n_seq_max": 1,
+    "ram_budget_bytes": 68719476736
+  },
+  "fail_closed_tiny_budget": {
+    "ram_budget_bytes": 64,
+    "status": "ram budget exceeded",
+    "exit": 1,
+    "rss_kib": 9448,
+    "note": "No model alloc. Fail-closed at model_load."
+  },
+  "oracle": {
+    "test_q1_repack_oracle": "ok",
+    "note": "packed celiums_exact_q1_dot vs AVX-512 VNNI layout vs generic; nr=4 and nr=8"
+  },
+  "baseline_ram_lever_rerun": {
+    "t1_pp128": 2.388661,
+    "t1_tg128": 1.234438,
+    "t48_pp128": 75.406975,
+    "t48_tg128": 18.992209,
+    "source": "docs/benchmark-results-2026-08-22-i7i-ram-lever-rerun.json"
+  },
+  "bonsai_q1_8row_gemm": {
+    "model": "Bonsai-27B-Q1_0",
+    "sha256": "17ef842e47450caeb8eaa3ebfbbab5d2f2278b62b79be107985fb69a2f819aa0",
+    "layout": "q1_0 4x8 bit-packed VNNI; GEMM 8-row weight reuse",
+    "results": [
+      {"threads": 1, "pp128_avg_ts": 2.593416, "tg128_avg_ts": 1.227130, "rss_kib": 7386748, "elapsed": "10:11.50"},
+      {"threads": 48, "pp128_avg_ts": 80.398677, "tg128_avg_ts": 18.688961, "rss_kib": 7386056, "elapsed": "0:32.56"}
+    ],
+    "delta_vs_baseline": {
+      "t1_pp128": "+8.6%",
+      "t1_tg128": "-0.6%",
+      "t48_pp128": "+6.6%",
+      "t48_tg128": "-1.6%"
+    }
+  },
+  "production_cap": {
+    "ram_budget_bytes": 68719476736,
+    "rss_under_cap": true,
+    "peak_rss_kib": 7386748,
+    "peak_rss_gib": 7.05,
+    "cap_gib": 64
+  },
+  "window_utc": {
+    "started": "2026-08-22T15:17:48Z",
+    "finished": "2026-08-22T15:28:32Z"
+  },
+  "raw_artifacts": "docs/i7i-metal-2026-08-22-q1-8row/"
+}

@@ -90,6 +90,7 @@ option(CELIUMS_BITNET_BUILD_GATEWAY "Build the optional Rust Hyphae gateway" OFF
 option(CELIUMS_BITNET_INSTALL_COMPAT "Install llama.cpp compatibility tools and development files" OFF)
 option(CELIUMS_BITNET_VERIFY_ENGINE_TREE "Verify worktree contents against cmake/ENGINE_TREE" OFF)
 set(CELIUMS_BITNET_TEST_MODEL "" CACHE FILEPATH "Strict I2_S model used by integration tests")
+set(CELIUMS_BONSAI_TEST_MODEL "" CACHE FILEPATH "Bonsai Qwen35 Q1_0 model used by integration tests")
 
 if (NOT BUILD_SHARED_LIBS AND CELIUMS_BITNET_INSTALL_COMPAT)
     message(FATAL_ERROR "Static builds cannot install the public or compatibility SDK")
@@ -346,6 +347,17 @@ if (BUILD_TESTING)
     endif()
     if (EXISTS ${CELIUMS_BITNET_TEST_MODEL})
         add_test(NAME test-celiums-runtime-session COMMAND test-celiums-runtime-session
-            ${CELIUMS_BITNET_TEST_MODEL})
+            ${CELIUMS_BITNET_TEST_MODEL} bitnet)
     endif()
+    if (CELIUMS_BONSAI_TEST_MODEL AND EXISTS ${CELIUMS_BONSAI_TEST_MODEL})
+        add_test(NAME test-celiums-runtime-session-bonsai COMMAND test-celiums-runtime-session
+            ${CELIUMS_BONSAI_TEST_MODEL} bonsai)
+    endif()
+    add_executable(test-q1-repack-oracle tests/test-q1-repack-oracle.cpp)
+    target_include_directories(test-q1-repack-oracle PRIVATE
+        ${PROJECT_SOURCE_DIR}/3rdparty/llama.cpp/ggml/include
+        ${PROJECT_SOURCE_DIR}/3rdparty/llama.cpp/ggml/src
+        ${PROJECT_SOURCE_DIR}/3rdparty/llama.cpp/ggml/src/ggml-cpu)
+    target_link_libraries(test-q1-repack-oracle PRIVATE ggml-cpu ggml-base celiums-exact)
+    add_test(NAME test-q1-repack-oracle COMMAND test-q1-repack-oracle)
 endif()

@@ -1,0 +1,216 @@
+{
+  "schema": "celiums-bitnet-cross-runtime-benchmark-v1",
+  "date": "2026-08-21",
+  "system": {
+    "provider": "DigitalOcean",
+    "size": "c-60-intel",
+    "region": "nyc3",
+    "cpu": "Intel Xeon Gold 6548N",
+    "vcpus": 60,
+    "threads_per_core": 1,
+    "memory_mib": 122880,
+    "numa_nodes": 1,
+    "isa": ["AVX2", "AVX-512", "AVX-512 VNNI"],
+    "compiler": "GCC 13.3.0",
+    "build_type": "Release"
+  },
+  "settings": {
+    "backend": "CPU",
+    "n_prompt": 128,
+    "n_gen": 128,
+    "batch": 128,
+    "ubatch": 128,
+    "repetitions": 5,
+    "cpu_strict": true,
+    "numa": "isolate",
+    "gpu_layers": 0,
+    "mmap": true
+  },
+  "prism_runtime": {
+    "repository": "https://github.com/PrismML-Eng/llama.cpp",
+    "release": "prism-b9599-9ca265a",
+    "commit": "9ca265a57f85f2117942490f421f64a226dd9847",
+    "cmake": [
+      "-DCMAKE_BUILD_TYPE=Release",
+      "-DGGML_NATIVE=ON",
+      "-DGGML_OPENMP=ON",
+      "-DLLAMA_BUILD_TESTS=OFF",
+      "-DLLAMA_BUILD_SERVER=OFF"
+    ]
+  },
+  "prism_models": [
+    {
+      "repository": "prism-ml/Ternary-Bonsai-27B-gguf",
+      "revision": "abbae723028d71be674e71e1a71201a6f43fab22",
+      "filename": "Ternary-Bonsai-27B-Q2_0.gguf",
+      "architecture": "qwen35",
+      "format": "Q2_0_g128",
+      "parameters": 26895998464,
+      "file_size_bytes": 7165121600,
+      "sha256": "868c11714cf8fe47f5ec9eeb2be0ab1a337112886f92ee0ede6b855c4fa31757",
+      "peak_rss_kib": 13744744,
+      "results": [
+        {"threads": 1, "pp128_avg_ts": 2.400495, "pp128_stddev_ts": 0.011571, "tg128_avg_ts": 1.035917, "tg128_stddev_ts": 0.002657},
+        {"threads": 8, "pp128_avg_ts": 18.336102, "pp128_stddev_ts": 0.125794, "tg128_avg_ts": 6.671849, "tg128_stddev_ts": 0.045762},
+        {"threads": 30, "pp128_avg_ts": 48.331731, "pp128_stddev_ts": 0.117902, "tg128_avg_ts": 13.878101, "tg128_stddev_ts": 0.083051},
+        {"threads": 60, "pp128_avg_ts": 46.656236, "pp128_stddev_ts": 0.012221, "tg128_avg_ts": 14.079612, "tg128_stddev_ts": 0.007316}
+      ]
+    },
+    {
+      "repository": "prism-ml/Bonsai-27B-gguf",
+      "revision": "f10afb355f104535e3e3e98cf7ab7795c72bd292",
+      "filename": "Bonsai-27B-Q1_0.gguf",
+      "architecture": "qwen35",
+      "format": "Q1_0",
+      "parameters": 26895998464,
+      "file_size_bytes": 3803452480,
+      "sha256": "17ef842e47450caeb8eaa3ebfbbab5d2f2278b62b79be107985fb69a2f819aa0",
+      "peak_rss_kib": 7367684,
+      "results": [
+        {"threads": 1, "pp128_avg_ts": 2.373717, "pp128_stddev_ts": 0.004883, "tg128_avg_ts": 1.423568, "tg128_stddev_ts": 0.004408},
+        {"threads": 8, "pp128_avg_ts": 18.372036, "pp128_stddev_ts": 0.092612, "tg128_avg_ts": 8.779327, "tg128_stddev_ts": 0.085165},
+        {"threads": 30, "pp128_avg_ts": 46.374167, "pp128_stddev_ts": 0.252164, "tg128_avg_ts": 16.918083, "tg128_stddev_ts": 0.032586},
+        {"threads": 60, "pp128_avg_ts": 46.149738, "pp128_stddev_ts": 0.025426, "tg128_avg_ts": 16.421216, "tg128_stddev_ts": 0.015812}
+      ]
+    }
+  ],
+  "celiums_control": {
+    "release": "v0.3.0",
+    "product_commit": "24bfe056a507a22827fc968849725fa33bc22f49",
+    "engine_commit": "e1002b8be",
+    "engine_tree": "49954a100ec1ae3f28a68450f902c2594fc66bc0",
+    "archive_sha256": "f6fea9675a4c097fa624ea84e27f90dc9ac51aed781f84cdd50f18c829a6158c",
+    "model": {
+      "architecture": "bitnet-b1.58",
+      "format": "I2_S",
+      "parameters": 2410000000,
+      "parameters_approximate": true,
+      "sha256": "e23b16fa81b890e8b65e676262b645e8ffa5ae1f6df89dadaf793246826bbd90"
+    },
+    "results": [
+      {"threads": 1, "pp128_avg_ts": 78.071408, "tg128_avg_ts": 9.356971},
+      {"threads": 8, "pp128_avg_ts": 537.838174, "tg128_avg_ts": 60.766045},
+      {"threads": 30, "pp128_avg_ts": 1270.707764, "tg128_avg_ts": 123.354808},
+      {"threads": 60, "pp128_avg_ts": 1311.879716, "tg128_avg_ts": 127.034552}
+    ],
+    "peak_rss_kib": 1262628,
+    "bonsai_load_status": "unsupported strict model"
+  },
+  "comparison_scope": {
+    "same_host_and_workload_shape": true,
+    "same_model": false,
+    "normalized_by_parameter_count": false,
+    "note": "Celiums 0.3.0 exposed bitnet-b1.58 I2_S only, although its vendored engine already contained inherited qwen35 and Q1_0 support. Q1_0 can be enabled through an explicit compatibility profile; Prism Q2_0 still requires new engine support. The 0.3.0 result is a product control rather than a same-model runtime comparison."
+  },
+  "raw_artifacts": {
+    "archive_filename": "bonsai-27b-c60-raw-20260821.tar.gz",
+    "archive_sha256": "779f8bd141449b7ce36780efacdb7b0c03d532d2dbaee4be8bead19b7e266934"
+  },
+  "same_model_q1_comparison": {
+    "system": {
+      "provider": "DigitalOcean",
+      "size": "c-60-intel",
+      "region": "nyc1",
+      "cpu": "Intel Xeon Platinum 8358",
+      "vcpus": 60,
+      "threads_per_core": 1,
+      "numa_nodes": 1
+    },
+    "model_sha256": "17ef842e47450caeb8eaa3ebfbbab5d2f2278b62b79be107985fb69a2f819aa0",
+    "settings": {
+      "n_prompt": 128,
+      "n_gen": 128,
+      "batch": 128,
+      "ubatch": 128,
+      "repetitions": 5,
+      "cpu_profile": "native"
+    },
+    "celiums": {
+      "source_archive_sha256": "4cb9c780ff93f207aaf8df64f5cd6bad497c70c978ff2ba631bde7a8206f2e08",
+      "engine_commit": "e1002b8be",
+      "engine_tree": "49954a100ec1ae3f28a68450f902c2594fc66bc0",
+      "results": [
+        {"threads": 1, "pp128_avg_ts": 0.890653, "tg128_avg_ts": 0.753713},
+        {"threads": 8, "pp128_avg_ts": 7.021503, "tg128_avg_ts": 4.809978},
+        {"threads": 30, "pp128_avg_ts": 20.764884, "tg128_avg_ts": 8.138539},
+        {"threads": 60, "pp128_avg_ts": 20.708147, "tg128_avg_ts": 8.605936}
+      ],
+      "peak_rss_kib": 4043952
+    },
+    "prism": {
+      "release": "prism-b9599-9ca265a",
+      "commit": "9ca265a57f85f2117942490f421f64a226dd9847",
+      "results": [
+        {"threads": 1, "pp128_avg_ts": 1.534013, "tg128_avg_ts": 1.043130},
+        {"threads": 8, "pp128_avg_ts": 11.988601, "tg128_avg_ts": 5.821584},
+        {"threads": 30, "pp128_avg_ts": 35.226920, "tg128_avg_ts": 10.803841},
+        {"threads": 60, "pp128_avg_ts": 35.451299, "tg128_avg_ts": 10.137920}
+      ],
+      "peak_rss_kib": 7367636
+    },
+    "peak_results": {
+      "celiums_pp128_ts": 20.764884,
+      "prism_pp128_ts": 35.451299,
+      "celiums_tg128_ts": 8.605936,
+      "prism_tg128_ts": 10.803841,
+      "celiums_vs_prism_pp128": 0.585731,
+      "celiums_vs_prism_tg128": 0.796565,
+      "conclusion": "Celiums runs the same Bonsai Q1_0 model but does not accelerate it. Prism is 1.71x faster for peak prefill and 1.26x faster for peak decode."
+    },
+    "raw_artifacts": {
+      "archive_filename": "bonsai-q1-same-model-c60-20260821.tar.gz",
+      "archive_sha256": "1fa7a5dd4bab6589760aea29c228863e3fae0db756b09e47fb350bf7851d70c0"
+    },
+    "direct_engine_comparison": {
+      "tool": "llama-bench",
+      "celiums_results": [
+        {"threads": 1, "pp128_avg_ts": 0.888001, "tg128_avg_ts": 0.753459},
+        {"threads": 8, "pp128_avg_ts": 6.975514, "tg128_avg_ts": 4.829352},
+        {"threads": 30, "pp128_avg_ts": 20.724248, "tg128_avg_ts": 8.249288},
+        {"threads": 60, "pp128_avg_ts": 20.649783, "tg128_avg_ts": 8.563083}
+      ],
+      "prism_results": [
+        {"threads": 1, "pp128_avg_ts": 1.526676, "tg128_avg_ts": 1.040701},
+        {"threads": 8, "pp128_avg_ts": 11.954445, "tg128_avg_ts": 5.784145},
+        {"threads": 30, "pp128_avg_ts": 34.686591, "tg128_avg_ts": 10.592167},
+        {"threads": 60, "pp128_avg_ts": 35.420222, "tg128_avg_ts": 9.931769}
+      ],
+      "peak": {
+        "celiums_pp128_ts": 20.724248,
+        "prism_pp128_ts": 35.420222,
+        "celiums_tg128_ts": 8.563083,
+        "prism_tg128_ts": 10.592167,
+        "celiums_vs_prism_pp128": 0.585097,
+        "celiums_vs_prism_tg128": 0.808447
+      },
+      "raw_artifacts": {
+        "archive_filename": "bonsai-q1-direct-engine-c60-20260821.tar.gz",
+        "archive_sha256": "9146d9f411fc4804393e875b9ebbf98546b6e749a65da7523cc8a26ec081c75f"
+      }
+    },
+    "q1_avx512_vnni_repack": {
+      "source_commits": [
+        "720e06b1637517188bbf2fb2d0005b7c2204e2d7",
+        "9fcaed763ccda38ea81068ad9d7f991aaddca451"
+      ],
+      "scope": "Q1_0 four-row repack only; Prism Q2_0 excluded",
+      "results": [
+        {"threads": 1, "pp128_avg_ts": 1.540362, "pp128_stddev_ts": 0.002274, "tg128_avg_ts": 1.052717, "tg128_stddev_ts": 0.002661},
+        {"threads": 8, "pp128_avg_ts": 12.122249, "pp128_stddev_ts": 0.012324, "tg128_avg_ts": 5.893770, "tg128_stddev_ts": 0.002434},
+        {"threads": 30, "pp128_avg_ts": 36.244975, "pp128_stddev_ts": 0.105407, "tg128_avg_ts": 10.992244, "tg128_stddev_ts": 0.035331},
+        {"threads": 60, "pp128_avg_ts": 35.925092, "pp128_stddev_ts": 0.026760, "tg128_avg_ts": 10.199080, "tg128_stddev_ts": 0.013177}
+      ],
+      "peak_rss_kib": 7368824,
+      "speedup": {
+        "vs_previous_celiums_pp128": 1.748921,
+        "vs_previous_celiums_tg128": 1.283687,
+        "vs_prism_pp128": 1.023287,
+        "vs_prism_tg128": 1.037770
+      },
+      "raw_artifacts": {
+        "archive_filename": "celiums-q1-repack-c60-20260821.tar.gz",
+        "archive_sha256": "c00d339ebf385f6f9f44bdfcfc67ac672c8cbb1e803c017ec3c743bf43a6a5d2"
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+	Command being timed: "/home/ubuntu/build-native/bin/celiums-bitnet bench --model /home/ubuntu/models/Bonsai-27B-Q1_0.gguf --model-family bonsai -p 128 -n 128 -b 128 -ub 128 --compute-layout 1 --n-seq 1 --ram-budget-bytes 68719476736 -t 1 -r 3"
+	User time (seconds): 636.01
+	System time (seconds): 1.26
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 10:37.37
+	Maximum resident set size (kbytes): 7387244
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 1024130
+	Exit status: 0

@@ -1,0 +1,12 @@
+      1   14dfa2:	62 72 3d 48 50 ee    	vpdpbusd %zmm6,%zmm8,%zmm13
+      1   14dfe9:	62 f2 0d 48 50 de    	vpdpbusd %zmm6,%zmm14,%zmm3
+      1   14dffc:	62 f2 1d 48 50 d6    	vpdpbusd %zmm6,%zmm12,%zmm2
+      1   14e067:	62 72 3d 48 50 ec    	vpdpbusd %zmm4,%zmm8,%zmm13
+      1   14e08e:	62 f2 0d 48 50 dc    	vpdpbusd %zmm4,%zmm14,%zmm3
+      1   14e09e:	62 f2 55 48 50 d4    	vpdpbusd %zmm4,%zmm5,%zmm2
+      1   14e113:	62 72 3d 48 50 e6    	vpdpbusd %zmm6,%zmm8,%zmm12
+      1   14e130:	62 f2 0d 48 50 de    	vpdpbusd %zmm6,%zmm14,%zmm3
+      1   14e140:	62 f2 15 48 50 d6    	vpdpbusd %zmm6,%zmm13,%zmm2
+      1   14e1a8:	62 72 3d 48 50 e6    	vpdpbusd %zmm6,%zmm8,%zmm12
+      1   14e1cf:	62 f2 0d 48 50 ee    	vpdpbusd %zmm6,%zmm14,%zmm5
+      1   14e1df:	62 f2 15 48 50 e6    	vpdpbusd %zmm6,%zmm13,%zmm4

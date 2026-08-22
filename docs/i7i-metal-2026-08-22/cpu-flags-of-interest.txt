@@ -1,0 +1,6 @@
+     96 amx_bf16
+     96 amx_int8
+     96 amx_tile
+     96 avx512_vnni
+     96 avx512f
+     96 avx_vnni

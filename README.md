@@ -2,64 +2,180 @@
 
 # Celiums BitNet Runtime
 
-### CPU inference for ternary BitNet b1.58 with an explicit numerical contract
+### Ternary models on CPU. Packed on disk. RAM as a serving lever. Exact math.
 
 [![License](https://img.shields.io/badge/Celiums%20code-Apache--2.0-blue.svg)](LICENSE)
 [![Upstream](https://img.shields.io/badge/upstream-Microsoft%20BitNet-5C2D91.svg)](UPSTREAM.md)
 [![Version](https://img.shields.io/badge/version-0.3.0-111827.svg)](CHANGES.md)
-[![Status](https://img.shields.io/badge/I2__S-contract%20validated-0F766E.svg)](docs/NUMERICAL_CONTRACT.md)
+[![I2_S](https://img.shields.io/badge/I2__S-contract%20validated-0F766E.svg)](docs/NUMERICAL_CONTRACT.md)
+[![Q1](https://img.shields.io/badge/Bonsai%20Q1-CPU%20text-111827.svg)](docs/VENDORED_CPU_HOT_PATH.md)
 
 </div>
 
-Celiums BitNet is an independent engineering fork of
-[Microsoft BitNet](https://github.com/microsoft/BitNet). Version 0.3.0 provides
-a CPU-only runtime for the BitNet b1.58 I2_S path, a public experimental C ABI,
-a native HTTP server, reproducible release tooling, and an optional local AI
-gateway backed by [Hyphae](https://github.com/celiumsai/hyphae).
+Celiums BitNet is a **CPU inference runtime for ternary networks**, not a
+wrapper around `llama-cli`. The public product is `celiums-bitnet`: one-shot
+generation, a native HTTP server, an experimental C ABI, and JSONL
+prefill/decode benches. The engine is vendored llama.cpp/ggml at
+`3rdparty/llama.cpp`. Applications talk to Celiums, not to GGML.
 
-The project is correctness-first: packed weights, activation quantization,
-integer accumulation, scale recovery, model metadata, and release provenance
-are treated as versioned contracts rather than undocumented implementation
-details.
+Two families are in the product surface:
 
-The 0.3.0 release candidate is prepared in source and CI. Until the `v0.3.0`
-tag and GitHub assets are published, use the source-build workflow below; the
-release-installation section describes the final asset contract.
+| Family | Model | On disk | Why it exists |
+| --- | --- | --- | --- |
+| `bitnet` (default) | [BitNet b1.58 2B](https://huggingface.co/microsoft/BitNet-b1.58-2B-4T) | I2_S, ~1.1 GiB | Certified ternary contract, 2-bit packed codes |
+| `bonsai` | [Bonsai 27B Q1_0](https://huggingface.co/prism-ml/Bonsai-27B-gguf) | Q1_0, ~3.53 GiB | 27B ternary CPU target; 1-bit signs, Gated DeltaNet + attention |
+
+A Llama/Qwen `Q4_K_M` GGUF is not a Celiums model. The engine still contains
+those kernels; the loader refuses them. Prism `Q2_0` is unsupported (its
+type IDs collide with Celiums TL2/I2_S).
 
 > [!IMPORTANT]
-> Celiums BitNet is maintained by Celiums Solutions LLC and is not affiliated
-> with, sponsored by, endorsed by, or supported by Microsoft. Microsoft and the
-> original contributors retain copyright in upstream code and model artifacts.
+> Maintained by Celiums Solutions LLC. Not affiliated with, sponsored by,
+> endorsed by, or supported by Microsoft. Upstream BitNet, llama.cpp, ggml,
+> and model artifacts keep their own copyright and licenses.
+
+## Why this runtime exists
+
+Ternary weights exist to cut **memory bandwidth**, the thing decode actually
+pays. A 27B model at ~1.13 bits/parameter is 3.53 GiB on disk. Streaming that
+once per generated token is the decode roofline. Prefill is different: the
+same weight image is reread once per activation tile. A 4-row tile on a
+128-token prompt rereads Q1 **32 times**.
+
+The 0.3.0 product already had a strict I2_S contract and a C API. What was
+missing for serving was the right to **spend RAM on purpose**, under a cap so
+the host stays usable, and to stop rereading Q1 panels on prefill.
+
+That is this work:
+
+1. **Packed GGUF stays the durable store.** We do not clone the file in RAM
+   and we do not treat NVMe as the inference path.
+2. **RAM is a compute working set.** On ARM with i8mm, Q1 expands to int8
+   ±1 so existing `usdot` kernels run. On x86, Q1 stays bit-packed 4×8 and
+   uses `vpdpbusd` (2P−S). Expanding x86 Q1 to bytes would blow DRAM on
+   decode; Graviton already showed that at 96 threads.
+3. **Every extra byte is capped.** `--ram-budget-bytes` is fail-closed:
+   `CELIUMS_BITNET_STATUS_RAM_BUDGET_EXCEEDED` at model load or session
+   create. Production default in the metal receipts is 64 GiB on 755 GiB
+   hosts.
+4. **Prefill reuses weights.** Q1 GEMM applies one 4×8 panel to **eight**
+   activation rows (FBGEMM-style blocking), then four. Decode is still
+   GEMV: one token, one pass over the image.
+
+LUT-GEMM and T-MAC stay out. They are approximate. I2_S and Q1 keep exact
+integer accumulation: `y = (D − S) ρ` and `dot = d_w d_x (2P − S)`.
+
+## How inference actually runs
+
+```text
+GGUF on disk (I2_S or Q1_0, mmap)
+        |
+        |  optional compute layout, charged against ram_budget
+        v
+in-RAM image
+  ARM i8mm : Q1 -> q8_0 4x8  (~8x bytes, ~26 GiB for Bonsai)
+  x86 VNNI : Q1 4x8 bit-packed panels (~3.4 GiB)
+  I2_S     : tinyBLAS VNNI, no Q1 expand
+        |
+        |  MUL_MAT
+        v
+prefill  n>3  -> GEMM, 8-row then 4-row tiles   (prompt)
+decode   n=1  -> GEMV, stream weights once      (next token)
+        |
+        v
+exact epilogue   I2_S: (D-S)*rho    Q1: 2P-S
+```
+
+The public call is still `celiums_bitnet_session_prefill` /
+`celiums_bitnet_session_decode`. Decode is prefill of length 1; the kernel
+split is inside vendored ggml.
+
+Exact math lives in `celiums-exact`
+(`3rdparty/llama.cpp/ggml/src/ggml-cpu/celiums-exact.{c,h}`). Kernels and
+oracles call it so tests do not reimplement the unit under test.
+
+| Knob | Default | What it buys |
+| --- | --- | --- |
+| `--model-family bitnet\|bonsai` | `bitnet` | Architecture + file-type gate |
+| `--compute-layout 0\|1` | `1` | ISA working set (expand or 4×8 panels) |
+| `--ram-budget-bytes N` | auto: ~half of host RAM, always headroom | Fail-closed cap |
+| `--n-seq N` | `1` | Concurrent decode states sharing one weight image |
+| `--threads` / `--threads-batch` | | Decode vs prefill parallelism |
+
+Zero budget means auto: half of host RAM, never more than 90%, always
+leaving at least 4 GiB or 10% free.
+
+## What the changes add (measured)
+
+All figures are `celiums-bitnet bench`, Bonsai 27B Q1_0 SHA
+`17ef842e47450caeb8eaa3ebfbbab5d2f2278b62b79be107985fb69a2f819aa0`,
+pp128 / tg128, cap 64 GiB. Metals were destroyed after the receipts.
+
+### Graviton 4 — `r8g.metal-24xl` (96× Neoverse-V2)
+
+Packed mmap was compute-bound. Expanding Q1 to int8 spends ~29 GiB RSS and
+feeds i8mm.
+
+| Threads | Packed mmap pp / tg | Expand-to-int8 pp / tg |
+| ---: | ---: | ---: |
+| 1 | 0.528 / 0.500 | **2.94 / 1.13** |
+| 96 | — / 18.16 | **147.0 / 12.11** |
+
+Prefill at t=1 is **5.6×**. Decode at t=1 is **2.3×**. At 96 threads decode
+**drops**: the int8 image saturates DRAM. Use the expand for prefill and
+moderate concurrency, not as “fill the machine.”
+
+### Xeon 8559C — `i7i.metal-24xl` (48c SMT-2, AVX-512 VNNI)
+
+x86 does **not** expand Q1. The lever is VNNI on bit-packed 4×8, then
+8-row prefill tiles.
+
+| Threads | 4-row GEMM pp / tg | 8-row GEMM pp / tg |
+| ---: | ---: | ---: |
+| 1 | 2.389 / 1.234 | **2.593 / 1.227** |
+| 48 | 75.41 / 18.99 | **80.40 / 18.69** |
+
+Prefill **+8.6%** at t=1, **+6.6%** at t=48. Decode is unchanged: GEMV
+still streams ~3.5 GiB/token (t=1 cache miss was ~65%). RSS stays ~7.05 GiB.
+
+A 64-byte budget fails closed (exit 1, ~9 MiB RSS, no model alloc) on both
+ISAs.
+
+Same i7i, certified BitNet 2B I2_S: t=1 **77.82 / 9.58**, t=48 **1304 / 153**
+tok/s. Different model, different roofline; listed so 27B Q1 is not confused
+with 2B I2_S.
+
+Raw JSON: [`docs/benchmark-results-2026-08-22-r8g-bonsai-ram-lever-rerun.json`](docs/benchmark-results-2026-08-22-r8g-bonsai-ram-lever-rerun.json),
+[`docs/benchmark-results-2026-08-22-i7i-ram-lever-rerun.json`](docs/benchmark-results-2026-08-22-i7i-ram-lever-rerun.json),
+[`docs/benchmark-results-2026-08-22-i7i-q1-8row.json`](docs/benchmark-results-2026-08-22-i7i-q1-8row.json).
+Hot-path review: [`docs/VENDORED_CPU_HOT_PATH.md`](docs/VENDORED_CPU_HOT_PATH.md).
 
 ## 0.3.0 Support Matrix
 
 | Area | Supported product surface |
 | --- | --- |
-| Model | [`microsoft/BitNet-b1.58-2B-4T`](https://huggingface.co/microsoft/BitNet-b1.58-2B-4T) release fixture |
-| Architecture | Decoder-only causal `bitnet-b1.58`, RMSNorm, RoPE, grouped-query attention, squared-ReLU gated FFN |
-| Weight format | GGUF v3, `MOSTLY_I2_S` file type 41, custom GGML I2_S type 36 |
-| Runtime | CPU only; one-shot generation, tokenization, prefill, decode, logits, sampling, callbacks, stops, cancellation |
-| CPU profiles | `native`, portable x86-64 `avx2`, and scalar reference/fallback |
+| Certified model | [`microsoft/BitNet-b1.58-2B-4T`](https://huggingface.co/microsoft/BitNet-b1.58-2B-4T) I2_S |
+| CPU text family | PrismML Bonsai 27B `Q1_0` via `--model-family bonsai` |
+| Runtime | CPU only; one-shot generation, tokenize, prefill, decode, logits, sampling, callbacks, stops, cancel |
+| CPU profiles | `native`, portable x86-64 `avx2`, scalar reference |
 | Public interfaces | `celiums-bitnet` CLI, experimental C ABI v1, native HTTP API |
-| Optional local AI | Hyphae-backed lexical/vector/hybrid RAG, memory, receipts, proofs, registry, semantic cache, MCP |
+| Serving knobs | RAM budget, compute layout, `n_seq` |
+| Optional local AI | Hyphae RAG / memory / receipts / MCP |
 | Release platform | Linux x86-64 shared-library archives |
 
-The engine contains inherited support for additional model families and
-backends, but those entries are not part of the Celiums 0.3.0 compatibility
-claim. Product CMake explicitly disables GPU and generic accelerator backends.
+Product CMake disables GPU and generic accelerator backends. ARM64 is
+measured on Graviton 4 for Bonsai Q1; it is not the 0.3.0 I2_S
+certification target.
 
 ## Quick Start
 
 ### Tested environment
 
-- official release archives: Linux x86-64, Ubuntu 24.04 / glibc 2.39 baseline;
-- source builds: Linux x86-64 is continuously tested; ARM64 is best-effort and
-  not strict-certified;
-- Python 3.10 through 3.12 for the documented conversion environment;
-- CMake 3.22 or newer;
-- GCC or Clang with C++17 support;
-- Git;
-- Rust 1.97.1 only when building the optional gateway.
+- official release archives: Linux x86-64, Ubuntu 24.04 / glibc 2.39;
+- source builds: Linux x86-64 continuously tested; ARM64 measured for Bonsai Q1;
+- Python 3.10–3.12 for conversion;
+- CMake 3.22+, GCC or Clang with C++17, Git;
+- Rust 1.97.1 only for the optional gateway.
 
 ### Install a release archive
 
@@ -69,8 +185,6 @@ After `v0.3.0` is published, download an archive and its matching manifest from
 - `native` only for the same CPU class as the release builder;
 - `avx2` for x86-64 CPUs with SSE4.2, AVX, AVX2, FMA, and F16C;
 - `scalar` as the compatibility/reference fallback.
-
-Verify and extract:
 
 ```bash
 PROFILE=avx2
@@ -85,9 +199,7 @@ tar -xzf "$ARCHIVE" -C celiums-bitnet-0.3.0
 celiums-bitnet-0.3.0/usr/bin/celiums-bitnet version
 ```
 
-The archive is a `/usr`-shaped relocatable payload. Install it under `/` with
-your package/image tooling, or invoke it from the extracted tree with its
-relative library layout intact.
+The archive is a `/usr`-shaped relocatable payload.
 
 ### Build from source
 
@@ -103,14 +215,11 @@ python -m pip install -r requirements.txt
 python setup_env.py --build-only --build-server
 ```
 
-The engine is vendored at `3rdparty/llama.cpp`; a plain clone is complete and
-does not fetch a second engine repository. Even build-only setup imports the
-conversion validator, so install the Python requirements first.
+The engine is vendored at `3rdparty/llama.cpp`. A plain clone is complete.
 
-### Download and convert the certified source revision
+### Certified BitNet 2B
 
-The release fixture uses Hugging Face source revision
-`04c3b9ad9361b824064a1f25ea60a8be9599b127`:
+Hugging Face revision `04c3b9ad9361b824064a1f25ea60a8be9599b127`:
 
 ```bash
 python setup_env.py \
@@ -124,11 +233,23 @@ printf '%s  %s\n' \
   "$MODEL" | sha256sum -c -
 ```
 
-This invocation configures/builds the runtime and converts the model. If you
-already built, reuse the same build directory; CMake and Cargo perform
-incremental work.
+### Bonsai 27B Q1_0
 
-### Validate, run, and serve
+Use a pre-quantized `Bonsai-27B-Q1_0.gguf` (SHA-256
+`17ef842e47450caeb8eaa3ebfbbab5d2f2278b62b79be107985fb69a2f819aa0`).
+Celiums does not convert Bonsai.
+
+```bash
+BONSAI=models/Bonsai-27B-Q1_0.gguf
+build/bin/celiums-bitnet validate --model "$BONSAI" --model-family bonsai
+build/bin/celiums-bitnet run \
+  --model "$BONSAI" --model-family bonsai \
+  --prompt "Explain why ternary weights reduce memory bandwidth." \
+  --threads 8 --threads-batch 48 --n-predict 128 \
+  --ram-budget-bytes 68719476736
+```
+
+### Validate, run, and serve (BitNet)
 
 ```bash
 build/bin/celiums-bitnet version
@@ -136,98 +257,90 @@ build/bin/celiums-bitnet validate --model "$MODEL"
 build/bin/celiums-bitnet run \
   --model "$MODEL" \
   --prompt "Explain why ternary weights reduce memory bandwidth." \
-  --threads 6 \
-  --threads-batch 14 \
-  --n-predict 128
+  --threads 6 --threads-batch 14 --n-predict 128
 ```
 
-`run` is one-shot generation, not a terminal conversation loop.
+`run` is one-shot generation, not a chat loop.
 
 ```bash
 CELIUMS_BITNET_API_KEY='replace-me' \
 build/bin/celiums-bitnet serve \
-  --model "$MODEL" \
-  --host 127.0.0.1 \
-  --port 8080
+  --model "$MODEL" --host 127.0.0.1 --port 8080
 ```
 
-Non-loopback binding is refused unless an API key is configured or the explicit
-unsafe override is supplied. Authentication applies to health, models,
-completions, chat completions, and metrics.
+Non-loopback binding is refused unless an API key is configured or the
+explicit unsafe override is supplied.
+
+```bash
+build/bin/celiums-bitnet bench --model "$MODEL" -p 128 -n 128 -t 8 -r 3
+```
 
 ## Core Capabilities
 
 ### Strict I2_S CPU path
 
 - canonical 128-coefficient ternary packing;
-- tensor-wide F32 weight dequantization scale;
+- tensor-wide F32 weight scale;
 - per-row I8_S activation quantization and activation-code sum;
-- corrected unsigned-code dot product and offset recovery;
-- scalar, AVX2-without-VNNI, and native/VNNI execution paths;
-- GEMV and GEMM, multiple threads, zero rows, and multi-plane activations;
+- unsigned-code dot product and offset recovery `y = (D − S) ρ`;
+- scalar, AVX2-without-VNNI, and native/VNNI paths;
+- GEMV and GEMM, multiple threads, zero rows, multi-plane activations;
 - squared-ReLU BitNet FFN graph;
-- structural conversion checks for architecture, activation, projection
-  presence, shape, byte count, scale, and GGUF metadata;
-- checked model load through `celiums-bitnet validate`.
+- structural conversion checks and `celiums-bitnet validate`.
+
+### Bonsai Q1_0 CPU path
+
+- 1-bit signs, FP16 block scale, `dot = d_w d_x (2P − S)`;
+- 4×8 repack; ARM expand-to-int8 or x86 VNNI bit-packed panels;
+- 8-row prefill GEMM weight reuse;
+- Qwen35 Gated DeltaNet + full attention (inherited graph, F32 state);
+- packed vs layout vs generic oracle (`tests/test-q1-repack-oracle.cpp`).
 
 ### Runtime and serving
 
 - opaque Runtime, Model, Session, and Request C handles;
-- model metadata and chat-template application;
-- tokenization and detokenization;
-- prefill, single-token decode, copied logits, and sampling;
-- greedy or temperature/top-k/top-p generation;
-- repeatable stop sequences and cooperative cancellation;
-- synchronous token streaming callbacks;
-- one-shot CLI generation and JSONL prefill/decode benchmarking;
-- an OpenAI-shaped HTTP subset for text and chat completions;
-- SSE streaming with `data: [DONE]` and disconnect cancellation;
-- bearer or `X-Api-Key` authentication on every server endpoint;
-- Prometheus counters and gauges at `/metrics`.
+- fail-closed RAM budget and optional compute layout;
+- tokenization / detokenization, prefill, decode, logits, sampling;
+- greedy or temperature/top-k/top-p;
+- stop sequences, cooperative cancellation, streaming callbacks;
+- JSONL prefill/decode benchmark;
+- OpenAI-shaped HTTP subset, SSE, bearer / `X-Api-Key`, `/metrics`.
 
 ### Optional Hyphae gateway
 
-- BM25 lexical retrieval;
-- exact cosine-vector retrieval;
-- HNSW ANN retrieval with exact reranking;
-- lexical + vector hybrid retrieval;
-- scoped persistent documents and agent memory;
-- idempotent request state and generation receipts;
-- opt-in semantic response cache;
-- proof/witness generation and offline semantic re-execution;
-- artifact, dataset, lineage, run, evaluation, and contamination records;
-- hard-negative mining manifests;
-- separate MCP stdio adapter for retrieval, RAG, memory, and verification.
+BM25, exact cosine, HNSW, hybrid retrieval, memory, receipts, proofs,
+registry, semantic cache, MCP. The gateway is process-separated: it does
+not link Hyphae into ggml.
 
-The gateway is model-independent at the orchestration boundary: another
-generator can use the same Hyphae knowledge plane if it exposes the expected
-loopback completion API. Vector modes require a separately configured
-OpenAI-compatible embedding service; Celiums BitNet 0.3.0 does not provide a
-built-in embedding endpoint.
+## Supported Models
 
-## Supported Model
-
-The certified release fixture is:
+### BitNet b1.58 2B (certified)
 
 | Property | Value |
 | --- | --- |
 | Repository | `microsoft/BitNet-b1.58-2B-4T` |
-| Source class | `BitnetForCausalLM` / `BitNetForCausalLM` |
-| Required source activation | `relu2` |
-| Converted architecture | `bitnet-b1.58` |
+| Architecture | `bitnet-b1.58` |
 | File type | `MOSTLY_I2_S` (41) |
-| Training context metadata | 4096 tokens |
-| Layers | 30 |
-| Parameters reported by runtime | approximately 2.41B |
-| Validated GGUF SHA-256 | `e23b16fa81b890e8b65e676262b645e8ffa5ae1f6df89dadaf793246826bbd90` |
-| Tensor inventory | 210 I2_S, 121 F32, 1 F16 |
+| Parameters | ~2.41B |
+| Validated SHA-256 | `e23b16fa81b890e8b65e676262b645e8ffa5ae1f6df89dadaf793246826bbd90` |
 
-Model files are not distributed in this repository or in runtime release
-archives. Their licenses and terms remain those of their publishers.
+### Bonsai 27B Q1_0 (CPU text family)
 
-`celiums_bitnet_model_load()` enforces architecture and file-type metadata, not
-the model repository identity or known SHA-256. Production deployments should
-pin the model revision and verify the expected digest before loading it.
+| Property | Value |
+| --- | --- |
+| File | `Bonsai-27B-Q1_0.gguf` |
+| Architecture | `qwen35` |
+| File type | `MOSTLY_Q1_0` (40) |
+| Parameters | ~26.9B |
+| SHA-256 | `17ef842e47450caeb8eaa3ebfbbab5d2f2278b62b79be107985fb69a2f819aa0` |
+
+Model files are not in this repository. Licenses stay with their publishers.
+`celiums_bitnet_model_load()` checks architecture and file type, not the
+Hugging Face identity. Pin the revision and digest in production.
+
+`celiums_bitnet_model_load()` is BitNet-only. Bonsai requires
+`celiums_bitnet_model_load_family(..., CELIUMS_BITNET_MODEL_FAMILY_BONSAI_QWEN35_Q1_0)`
+or `--model-family bonsai`.
 
 ## Mathematical Contract Summary
 
@@ -237,90 +350,38 @@ Let a logical ternary weight matrix be
 W in {-1, 0, +1}^{M x K},  K > 0,  K mod 128 = 0.
 ```
 
-Only the contraction dimension `K` must be divisible by 128; `M` and the number
-of activation rows do not have that restriction.
+Only `K` must be divisible by 128.
 
-### 1. Ternary codes and packing
-
-The persisted unsigned code is
+### 1. Ternary codes and packing (I2_S)
 
 ```text
-u[r,i] = W[r,i] + 1
-
-W = -1  ->  u = 0
-W =  0  ->  u = 1
-W = +1  ->  u = 2
+u[r,i] = W[r,i] + 1     # -1 -> 0,  0 -> 1,  +1 -> 2
 ```
 
-For each logical block of 128 coefficients, packed byte `g` stores positions
-`g`, `g+32`, `g+64`, and `g+96` in bit fields `7:6`, `5:4`, `3:2`, and `1:0`:
-
-```text
-P[g] = (u[g] << 6) | (u[g+32] << 4) |
-       (u[g+64] << 2) | u[g+96],       0 <= g < 32.
-```
-
-Each 128-coefficient block occupies 32 packed bytes. The tensor adds a 32-byte
-trailer whose first F32 is the tensor-wide weight scale `alpha_W`; remaining
-trailer bytes are reserved and ignored by the runtime.
+Each 128-coefficient block occupies 32 packed bytes. A 32-byte trailer holds
+the tensor-wide scale `alpha_W`.
 
 ### 2. Activation quantization
 
-For each finite activation row `x_t` in the validated numerical domain:
-
 ```text
-amax_t = max_i abs(x_t[i])
-
-beta_t = 127 / amax_t,  if amax_t > 0
-         0,             if amax_t = 0
-
+beta_t = 127 / amax_t     (0 if the row is zero)
 q_t[i] = clamp(round_half_away(beta_t * x_t[i]), -128, 127)
-S_t    = sum_i q_t[i].
+S_t    = sum_i q_t[i]
 ```
 
-`beta_t` is the activation quantization multiplier. A zero row produces
-`q_t = 0`, `S_t = 0`, and exact zero matrix output.
-
-### 3. Integer dot product and recovery
-
-The kernel computes unsigned-code products:
+### 3. Integer dot and recovery
 
 ```text
 D[r,t] = sum_i u[r,i] * q_t[i]
-T[r,t] = D[r,t] - S_t
-       = sum_i W[r,i] * q_t[i].
+T[r,t] = D[r,t] - S_t = sum_i W[r,i] * q_t[i]
+y_hat  = (alpha_W / beta_t) * T     (0 if beta_t = 0)
 ```
 
-The active CPU path recovers the approximation with the piecewise post-scale
+Q1_0 is the 1-bit sibling: stored bit `b`, `P = sum b q`, `S = sum q`,
+`dot = d_w d_x (2P − S)`. Same VNNI instruction, different packing.
 
-```text
-rho_t = alpha_W / beta_t,  if beta_t > 0
-        0,                 if beta_t = 0
-
-y_hat[r,t] = rho_t * T[r,t].
-```
-
-This avoids division by zero for all-zero activation rows. The complete contract
-documents byte layout, constructor behavior, accumulator bounds, invalid code
-3, graph activation, validation gaps, and exactness evidence in
+Full layout, bounds, and evidence:
 [`docs/NUMERICAL_CONTRACT.md`](docs/NUMERICAL_CONTRACT.md).
-
-### What “contract validated” means
-
-- AVX2 activation quantization matches the scalar `roundf` definition for the
-  enumerated unit fixtures in multiplier, I8 bytes, and activation sum.
-- Scalar, AVX2-without-VNNI, and native/VNNI kernels implement the same
-  unsigned-code correction for the supported model dimensions.
-- GEMV/GEMM fixtures pass across 1, 2, and 4 threads, zero rows, and multi-plane
-  input.
-- On one fixed model, prompt, and runtime configuration, native AVX-VNNI and
-  AVX2-without-VNNI produced bitwise-identical full-vocabulary logits.
-- Scalar whole-model logits were not bitwise identical; the first observed
-  divergence was in RoPE, outside the I2_S matrix kernel.
-
-This evidence does **not** establish universal cross-ISA bitwise identity or
-equivalence to the original source-checkpoint implementation. Source-checkpoint
-logits, perplexity, or KL certification remains future work.
 
 ## Public Interfaces
 
@@ -328,60 +389,36 @@ logits, perplexity, or KL certification remains future work.
 
 | Command | Purpose |
 | --- | --- |
-| `celiums-bitnet run` | One-shot prompt generation with streamed stdout |
+| `celiums-bitnet run` | One-shot prompt generation |
 | `celiums-bitnet serve` | Native HTTP completion server |
 | `celiums-bitnet bench` | Prefill/decode throughput in JSONL |
-| `celiums-bitnet validate` | Checked model load and metadata report |
-| `celiums-bitnet version` | Product, engine, tree, profile, and strict-state identity |
+| `celiums-bitnet validate` | Checked model load |
+| `celiums-bitnet version` | Product, engine, tree, profile, strict |
+
+`run`, `serve`, `bench`, and `validate` accept `--model-family bitnet|bonsai`,
+`--ram-budget-bytes`, `--compute-layout`, and `--n-seq`.
 
 ### Experimental C ABI v1
 
-The public header is [`include/celiums/bitnet_runtime.h`](include/celiums/bitnet_runtime.h).
-It provides:
+Header: [`include/celiums/bitnet_runtime.h`](include/celiums/bitnet_runtime.h).
 
-- runtime/model/session/request lifetime management;
-- product and vendored-engine provenance;
-- model load, validation, metadata, descriptions, and chat templates;
-- token-to-piece, tokenization, and detokenization;
-- session reset, position/context/vocabulary inspection;
-- prefill, decode, logits copy, and sampling;
-- synchronous generation, token callbacks, stops, and cancellation.
-
-The ABI is experimental while asynchronous ownership, multi-sequence scheduling,
-and broader compatibility mature. A Session serializes mutable context
-operations. Request destruction must occur after its synchronous generation
-call returns.
+Runtime / Model / Session / Request handles; provenance; family-gated load;
+tokenize; prefill/decode/logits/sample; RAM budget; compute layout; `n_seq`.
+The ABI is 0.x. A Session serializes mutable context operations.
 
 ### Native HTTP API
 
-| Method | Endpoint | Capability |
-| --- | --- | --- |
-| `GET` | `/health`, `/v1/health` | Health status |
-| `GET` | `/v1/models` | Static Celiums model record |
-| `POST` | `/v1/completions` | Text completion |
-| `POST` | `/v1/chat/completions` | Chat-template completion |
-| `GET` | `/metrics` | Prometheus metrics |
+| Method | Endpoint |
+| --- | --- |
+| `GET` | `/health`, `/v1/health` |
+| `GET` | `/v1/models` |
+| `POST` | `/v1/completions`, `/v1/chat/completions` |
+| `GET` | `/metrics` |
 
-The server implements an OpenAI-shaped **subset**, not the complete OpenAI API.
-Accepted generation fields are `prompt` or `messages`, `max_tokens`,
-`temperature`, `top_k`, `top_p`, `seed`, and `stream`. It does not currently
-implement continuous batching, tools/function calling, logprobs, penalties,
-multiple completions, structured output, or complete usage counts.
-
-Exported metrics:
-
-```text
-celiums_bitnet_http_requests_total
-celiums_bitnet_completions_total
-celiums_bitnet_failures_total
-celiums_bitnet_cancelled_total
-celiums_bitnet_generated_tokens_total
-celiums_bitnet_active_requests
-```
+OpenAI-shaped **subset**. No continuous batching, tools, logprobs, or
+complete usage counts.
 
 ## Optional Local AI Gateway
-
-Build the gateway with:
 
 ```bash
 cmake -S . -B build-gateway \
@@ -391,99 +428,38 @@ cmake -S . -B build-gateway \
 cmake --build build-gateway --parallel
 ```
 
-The architecture remains process-separated:
-
 ```text
-client
-  |
-  v
-celiums-runtime-gateway
-  | authenticated UDS                 | HTTP loopback
-  v                                   v
-celiums-hyphae-sidecar          celiums-bitnet serve
-  |                                   |
-  v                                   v
-Hyphae Native directory         read-only GGUF model
+client -> celiums-runtime-gateway
+            | UDS                    | HTTP loopback
+            v                        v
+       Hyphae sidecar          celiums-bitnet serve
 ```
 
-Installed gateway binaries:
-
-- `celiums-runtime-gateway`
-- `celiums-hyphae-sidecar`
-- `celiums-runtime-mcp`
-
-Retrieval modes are `lexical`, `exact`, `ann`, `hybrid_exact`, and
-`hybrid_ann`. RAG is opt-in on the completion routes. Hyphae is pinned to
-release 1.2.2 at commit
-`0471ae25b263fd506da1578068ec57429a6783de`.
-
-See [`docs/LOCAL_AI_GATEWAY.md`](docs/LOCAL_AI_GATEWAY.md) for deployment and
-API examples, and [`docs/GATEWAY_THREAT_MODEL.md`](docs/GATEWAY_THREAT_MODEL.md)
-for trust boundaries and non-claims.
+See [`docs/LOCAL_AI_GATEWAY.md`](docs/LOCAL_AI_GATEWAY.md) and
+[`docs/GATEWAY_THREAT_MODEL.md`](docs/GATEWAY_THREAT_MODEL.md).
 
 ## CPU Profiles and Hardware
 
-`CELIUMS_BITNET_CPU_PROFILE` is selected at build time:
-
-| Profile | ISA contract | Intended use |
+| Profile | ISA contract | Use |
 | --- | --- | --- |
-| `native` | `-march=native`; inherits the release builder CPU features | Maximum throughput on the same CPU class; not portable |
-| `avx2` | x86-64 SSE4.2, AVX, AVX2, FMA, F16C; no AVX-VNNI/AVX-512/AMX | Portable package for compatible x86-64 CPUs |
-| `scalar` | AVX/SSE4.2/FMA/F16C disabled in the product profile | Correctness fallback and reference testing |
+| `native` | `-march=native` | Same CPU class as the builder |
+| `avx2` | SSE4.2, AVX, AVX2, FMA, F16C; no AVX-VNNI/AVX-512/AMX | Portable x86-64 |
+| `scalar` | SIMD off in the product profile | Reference / fallback |
 
-Certified release evidence is Linux x86-64 CPU-focused. ARM64 NEON/DOTPROD is
-present in inherited code but remains outside the strict 0.3.0 certification.
-See [`docs/SUPPORTED_HARDWARE.md`](docs/SUPPORTED_HARDWARE.md).
+Product builds disable BLAS, CUDA, HIP, Metal, Vulkan, OpenCL, SYCL, CANN,
+RPC, and OpenVINO. TL1/TL2 need `CELIUMS_BITNET_EXPERIMENTAL=ON`. Non-strict
+mode is not implemented.
 
-Product builds forcibly disable BLAS, CUDA, HIP/ROCm, Metal, Vulkan, OpenCL,
-SYCL, CANN, RPC, and OpenVINO. TL1/TL2 require both their format option and
-`CELIUMS_BITNET_EXPERIMENTAL=ON`. Non-strict mode is not implemented.
+## Validation
 
-## Performance Evidence
+CI covers native / AVX2-without-VNNI / scalar, C ABI, I2_S GEMV/GEMM, I8_S
+quantization, ASan/UBSan, Python wrappers, and gateway tests. Q1 packed vs
+layout vs generic is `test-q1-repack-oracle`. I2_S mul_mat is
+`test-i2s-mul-mat`.
 
-A controlled historical baseline on a DigitalOcean `c-60-intel` instance with
-the certified 2B I2_S model is recorded in the benchmark documents. It includes
-one- and multi-thread prompt-processing/decode results and the first strict
-GEMV8 optimization. These are development measurements, not 0.3.0 universal
-speedup claims. Hardware, compiler, profile, thermal state, memory
-configuration, prompt shape, and model hash affect results. See
-[`docs/BENCHMARKING.md`](docs/BENCHMARKING.md),
-[`docs/benchmark-results-2026-08-19.json`](docs/benchmark-results-2026-08-19.json),
-and the [performance audit](docs/performance-audit-2026-08-18.md).
-
-The machine-readable JSON records the exact-commit baseline/GEMV8 run. The
-separate higher-throughput development-validation table in `BENCHMARKING.md`
-belongs to another archived run and is identified by its archive hash there.
-
-## Validation and Evidence
-
-The regular CI matrix covers:
-
-- native, AVX2-without-VNNI, and scalar builds;
-- C ABI and installed CMake SDK tests;
-- I8_S quantization fixtures;
-- I2_S GEMV/GEMM fixtures;
-- zero and multi-plane matrix cases;
-- ASan and UBSan;
-- Python conversion, logits-comparison, and wrapper tests;
-- Rust format, check, Clippy, gateway unit/E2E tests, packaging, and licenses.
-
-The model-backed release gate additionally runs:
-
-- strict checked model load;
-- one-shot generation;
-- native benchmark smoke tests;
-- authenticated HTTP and SSE tests;
-- full-vocabulary runtime logits comparison against the fixed converted-model
-  oracle, requiring bitwise identity.
-
-The oracle is a regression authority for the pinned converted GGUF and runtime
-path. It does not replace source-checkpoint logits, perplexity, or KL validation.
+The model-backed release gate still requires the pinned I2_S GGUF and
+full-vocabulary logits identity against the exactness oracle.
 See [`docs/EXACTNESS_ORACLE.md`](docs/EXACTNESS_ORACLE.md).
-
-Run the complete local gate on an Ubuntu 24.04 / glibc 2.39 builder with Rust
-1.97.1 and `cargo-about` 0.9.2. The model, oracle, and oracle sidecar are external
-fixtures:
 
 ```bash
 CELIUMS_BITNET_TEST_MODEL=/absolute/path/ggml-model-i2_s.gguf \
@@ -492,13 +468,7 @@ CELIUMS_BITNET_TEST_ORACLE_SIDECAR=/absolute/path/runtime-reference.gguf.json \
 JOBS=2 scripts/validate-release.sh
 ```
 
-The reference oracle is generated and governed by the workflow documented in
-[`docs/EXACTNESS_ORACLE.md`](docs/EXACTNESS_ORACLE.md); it is intentionally not
-stored in Git.
-
 ## Release Packages
-
-Release packaging is supported on Linux x86-64:
 
 ```bash
 JOBS=8 ./scripts/package-runtime.sh native
@@ -506,94 +476,53 @@ JOBS=8 ./scripts/package-runtime.sh avx2
 JOBS=8 ./scripts/package-runtime.sh scalar
 ```
 
-Each profile produces:
+Packaging refuses a dirty tree unless `ALLOW_DIRTY=1`.
 
-```text
-celiums-bitnet-runtime-0.3.0-linux-x86_64-<profile>.tar.gz
-celiums-bitnet-runtime-0.3.0-linux-x86_64-<profile>.tar.gz.json
-```
+## Explicit Limits
 
-The archive contains the unified runtime, optional gateway binaries, public C
-header/CMake package, private shared libraries, `Cargo.lock`, and complete
-license notices. The matching manifest records product and engine commits,
-engine tree, CPU profile, C/C++ compiler identities, Rust toolchain, Hyphae commit,
-Cargo lock digest, platform, and archive SHA-256.
+Celiums BitNet does not claim:
 
-`native` archives are valid only for the release builder CPU class. `avx2` and
-`scalar` close the CPU ISA profile, but binary portability also depends on the
-Linux userspace ABI of the release builder. The official 0.3.0 assets are built on
-Ubuntu 24.04. The CPU profile does not by itself guarantee compatibility with
-older Linux userspaces; inspect the manifest and ELF symbol requirements before
-deploying outside that baseline.
-
-Packaging refuses a dirty source tree unless `ALLOW_DIRTY=1` is explicitly
-used for non-release smoke testing.
-
-## Explicit Limits and Non-Claims
-
-Celiums BitNet 0.3.0 does not claim:
-
-- support for arbitrary llama.cpp models or quantization formats;
+- arbitrary llama.cpp models or quantizations;
 - source-checkpoint numerical certification;
-- universal full-model bitwise identity across CPU ISAs;
-- GPU or accelerator inference in the supported product build;
-- runtime CPU-profile switching or public affinity-mask controls;
-- continuous/dynamic batching or asynchronous C request execution;
-- a complete OpenAI API implementation;
-- built-in embedding inference;
-- TLS, rate limiting, or distributed serving;
-- that a valid retrieval proof makes generated prose true;
-- complete nearest-neighbor results from ANN;
-- clustering, replication, or object storage through Hyphae.
+- universal bitwise identity across ISAs;
+- GPU inference in the product build;
+- that expanding Q1 to int8 always helps decode (it can hurt at high thread
+  counts when the int8 image saturates DRAM);
+- that 8-row GEMM moves decode (it does not; decode is GEMV);
+- continuous batching, a complete OpenAI API, embeddings, or TLS.
 
-The packed code `3` is reserved and invalid under the I2_S contract. The
-trusted converter never emits it, but the current runtime loader does not scan
-every packed field during ordinary model load. Use trusted converter output,
-verify model hashes, and run `celiums-bitnet validate` before deployment.
+Packed I2_S code `3` is invalid. The converter never emits it; ordinary load
+does not scan every packed field. Verify hashes and run `validate`.
 
 ## Documentation
 
 | Document | Purpose |
 | --- | --- |
-| [`docs/RUNTIME_PRODUCT.md`](docs/RUNTIME_PRODUCT.md) | Runtime boundary, ABI, installation, CI, packaging |
-| [`include/celiums/bitnet_runtime.h`](include/celiums/bitnet_runtime.h) | Experimental public C ABI v1 |
-| [`docs/NUMERICAL_CONTRACT.md`](docs/NUMERICAL_CONTRACT.md) | I2_S/I8_S format and equations |
-| [`docs/SUPPORTED_HARDWARE.md`](docs/SUPPORTED_HARDWARE.md) | Certified and experimental hardware |
-| [`docs/LOCAL_AI_GATEWAY.md`](docs/LOCAL_AI_GATEWAY.md) | Gateway deployment and APIs |
-| [`docs/GATEWAY_THREAT_MODEL.md`](docs/GATEWAY_THREAT_MODEL.md) | Gateway security boundaries |
-| [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md) | Benchmark methodology |
-| [`docs/EXACTNESS_ORACLE.md`](docs/EXACTNESS_ORACLE.md) | Raw-logits regression workflow |
-| [`docs/EXPERIMENTAL_ROADMAP.md`](docs/EXPERIMENTAL_ROADMAP.md) | Non-certified optimization roadmap |
+| [`docs/RUNTIME_PRODUCT.md`](docs/RUNTIME_PRODUCT.md) | Runtime boundary, ABI, RAM cap |
+| [`docs/VENDORED_CPU_HOT_PATH.md`](docs/VENDORED_CPU_HOT_PATH.md) | CPU hot-path review and 8-row GEMM |
+| [`docs/NUMERICAL_CONTRACT.md`](docs/NUMERICAL_CONTRACT.md) | I2_S / I8_S equations |
+| [`docs/BONSAI_Q1_OPTIMIZATION_DEEP_DIVE.md`](docs/BONSAI_Q1_OPTIMIZATION_DEEP_DIVE.md) | Q1 kernel analysis |
+| [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md) | Methodology |
+| [`include/celiums/bitnet_runtime.h`](include/celiums/bitnet_runtime.h) | C ABI v1 |
 | [`CHANGES.md`](CHANGES.md) | Release history |
-
-The vendored `3rdparty/llama.cpp` tree retains upstream documentation that may
-describe binaries and backends disabled by the Celiums product build. The root
-README and product-owned documents define the supported surface.
 
 ## Ownership, License, and Attribution
 
 Copyright 2026 Celiums Solutions LLC.
 
-Celiums-authored product code, documentation, tests, build integration, and
-tooling outside the vendored runtime are licensed under the
-[Apache License 2.0](LICENSE). Original Microsoft BitNet portions retain their
-[MIT License](LICENSE-MIT). The `3rdparty/llama.cpp` runtime and Celiums
-modifications made inside that tree are distributed under its MIT terms, as
-stated in [NOTICE](NOTICE). Hyphae crates and bundled dependencies retain their
-own licenses and notices.
+Celiums-authored product code, documentation, tests, and tooling outside the
+vendored runtime are [Apache-2.0](LICENSE). Microsoft BitNet portions retain
+[MIT](LICENSE-MIT). `3rdparty/llama.cpp` and Celiums modifications inside
+that tree are MIT, as stated in [NOTICE](NOTICE).
 
 This repository does not transfer ownership of Microsoft, ggml, llama.cpp,
-model, Hyphae, or third-party code to Celiums Solutions LLC. See
-[NOTICE](NOTICE), [UPSTREAM.md](UPSTREAM.md), and the installed release notices
-for exact provenance.
+model, Hyphae, or third-party code to Celiums Solutions LLC.
 
 ## Maintainer
 
 - Mario Gutierrez, Celiums Solutions LLC
 
-Security reports should follow [SECURITY.md](SECURITY.md).
-
-For bugs and usage questions, open a GitHub issue with the product version,
-model hash, CPU profile, reproduction command, and relevant logs. Contributions
-must preserve the numerical contract, provenance files, upstream licenses, and
-the project [Code of Conduct](CODE_OF_CONDUCT.md).
+Security: [SECURITY.md](SECURITY.md). Bugs: open a GitHub issue with product
+version, model hash, CPU profile, command, and logs. Contributions must keep
+the numerical contract, provenance pins, upstream licenses, and the
+[Code of Conduct](CODE_OF_CONDUCT.md).

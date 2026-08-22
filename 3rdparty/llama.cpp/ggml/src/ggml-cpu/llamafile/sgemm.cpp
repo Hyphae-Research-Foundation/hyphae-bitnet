@@ -52,6 +52,7 @@
 #include "ggml-impl.h"
 #include "ggml-cpu-impl.h"
 #include "ggml-cpu-i2s.h"
+#include "celiums-exact.h"
 #include "ggml-quants.h"
 #include "simd-mappings.h"
 
@@ -1445,7 +1446,7 @@ class tinyBLAS_I2S_AVX {
                 __m128i hi32 = _mm_shuffle_epi32(sum64, _MM_SHUFFLE(2, 3, 0, 1));
                 float dot = (float) _mm_cvtsi128_si32(_mm_add_epi32(sum64, hi32));
                 if (post_scales) {
-                    dot = (dot - act_sums[0]) * post_scales[0];
+                    dot = celiums_exact_i2s_recover(dot, act_sums[0], post_scales[0]);
                 }
                 C[ii + r] = dot;
             }
@@ -1569,7 +1570,7 @@ class tinyBLAS_I2S_AVX {
                     float dot = (float)_mm_cvtsi128_si32(
                         _mm_add_epi32(sum64, hi32));
                     if (post_scales) {
-                        dot = (dot - act_sums[jj + c]) * post_scales[jj + c];
+                        dot = celiums_exact_i2s_recover(dot, act_sums[jj + c], post_scales[jj + c]);
                     }
                     C[ldc * (jj + c) + (ii + r)] = dot;
                 }

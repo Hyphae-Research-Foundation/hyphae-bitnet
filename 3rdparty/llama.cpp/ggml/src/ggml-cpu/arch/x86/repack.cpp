@@ -17,6 +17,7 @@
 
 #define GGML_CPU_CLANG_WORKAROUND
 #include "../../repack.h"
+#include "celiums-exact.h"
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic ignored "-Woverlength-strings"
@@ -6404,4 +6405,179 @@ void ggml_gemm_q2_K_8x8_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const vo
 
 
 #endif
+}
+
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512DQ__) && defined(__AVX512VNNI__) && defined(__F16C__)
+static inline __m128 q1_acc_pair_reduce_ps(__m512 acc01, __m512 acc23) {
+    const __m256 lo01 = _mm512_castps512_ps256(acc01);
+    const __m256 hi01 = _mm512_extractf32x8_ps(acc01, 1);
+    const __m256 lo23 = _mm512_castps512_ps256(acc23);
+    const __m256 hi23 = _mm512_extractf32x8_ps(acc23, 1);
+    const __m256 h0 = _mm256_hadd_ps(lo01, hi01);
+    const __m256 h1 = _mm256_hadd_ps(lo23, hi23);
+    const __m256 hh = _mm256_hadd_ps(h0, h1);
+    return _mm_add_ps(_mm256_castps256_ps128(hh), _mm256_extractf128_ps(hh, 1));
+}
+
+static inline void q1_0_expand_x4(const uint8_t * qs, __m512i * w01, __m512i * w23) {
+    const __m128i gather = _mm_setr_epi8(0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15);
+    const __m128i w = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *) qs), gather);
+    *w01 = _mm512_maskz_set1_epi8((__mmask64) (uint64_t) _mm_extract_epi64(w, 0), 1);
+    *w23 = _mm512_maskz_set1_epi8((__mmask64) (uint64_t) _mm_extract_epi64(w, 1), 1);
+}
+
+static inline void q1_vnni_acc_4rows(
+        const block_q8_0x4 * GGML_RESTRICT a_blk,
+        __m512i w01,
+        __m512i w23,
+        __m512 d0v01,
+        __m512 d0v23,
+        const __m512i ones,
+        const __m512i rowidx[4],
+        __m512 accf01[4],
+        __m512 accf23[4]) {
+    const __m512i qa_lo = _mm512_loadu_si512((const void *) a_blk->qs);
+    const __m512i qa_hi = _mm512_loadu_si512((const void *) (a_blk->qs + 64));
+    for (int m = 0; m < 4; ++m) {
+        const __m512i qa  = _mm512_permutex2var_epi64(qa_lo, rowidx[m], qa_hi);
+        const __m512i sq  = _mm512_dpbusd_epi32(_mm512_setzero_si512(), ones, qa);
+        const __m512i i01 = _mm512_dpbusd_epi32(_mm512_setzero_si512(), w01, qa);
+        const __m512i i23 = _mm512_dpbusd_epi32(_mm512_setzero_si512(), w23, qa);
+        const __m512 f01 = _mm512_cvtepi32_ps(_mm512_sub_epi32(_mm512_add_epi32(i01, i01), sq));
+        const __m512 f23 = _mm512_cvtepi32_ps(_mm512_sub_epi32(_mm512_add_epi32(i23, i23), sq));
+        const __m512 dd = _mm512_set1_ps(GGML_CPU_FP16_TO_FP32(a_blk->d[m]));
+        accf01[m] = _mm512_fmadd_ps(f01, _mm512_mul_ps(d0v01, dd), accf01[m]);
+        accf23[m] = _mm512_fmadd_ps(f23, _mm512_mul_ps(d0v23, dd), accf23[m]);
+    }
+}
+#endif
+
+void ggml_gemv_q1_0_4x8_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, const void * GGML_RESTRICT vy, int nr, int nc) {
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512DQ__) && defined(__AVX512VNNI__) && defined(__F16C__)
+    const int nb = n / QK1_0;
+
+    assert(nr == 1);
+    assert(n % QK1_0 == 0);
+    assert(nc % 4 == 0);
+    UNUSED(bs);
+
+    const __m512i ones  = _mm512_set1_epi8(1);
+    const __m512i idx01 = _mm512_set_epi32(1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0);
+    const __m512i idx23 = _mm512_set_epi32(3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2);
+
+    const block_q8_0 * a_ptr = (const block_q8_0 *) vy;
+    for (int x = 0; x < nc / 4; x++) {
+        const block_q1_0x4 * b_ptr = (const block_q1_0x4 *) vx + (x * nb);
+        __m512 accf01 = _mm512_setzero_ps();
+        __m512 accf23 = _mm512_setzero_ps();
+
+        for (int l = 0; l < nb; l++) {
+            const __m512 d0    = _mm512_castps128_ps512(_mm_cvtph_ps(_mm_loadl_epi64((const __m128i *) b_ptr[l].d)));
+            const __m512 d0v01 = _mm512_permutexvar_ps(idx01, d0);
+            const __m512 d0v23 = _mm512_permutexvar_ps(idx23, d0);
+
+            for (int k = 0; k < QK1_0 / QK8_0; ++k) {
+                const block_q8_0 * GGML_RESTRICT a_blk = a_ptr + l * (QK1_0 / QK8_0) + k;
+                __m512i w01, w23;
+                q1_0_expand_x4((const uint8_t *) b_ptr[l].qs + 16 * k, &w01, &w23);
+
+                const __m512i qa  = _mm512_broadcast_i64x4(_mm256_loadu_si256((const __m256i *) a_blk->qs));
+                const __m512i sq  = _mm512_dpbusd_epi32(_mm512_setzero_si512(), ones, qa);
+                const __m512i i01 = _mm512_dpbusd_epi32(_mm512_setzero_si512(), w01, qa);
+                const __m512i i23 = _mm512_dpbusd_epi32(_mm512_setzero_si512(), w23, qa);
+                const __m512 f01 = _mm512_cvtepi32_ps(_mm512_sub_epi32(_mm512_add_epi32(i01, i01), sq));
+                const __m512 f23 = _mm512_cvtepi32_ps(_mm512_sub_epi32(_mm512_add_epi32(i23, i23), sq));
+                const __m512 d1 = _mm512_set1_ps(GGML_CPU_FP16_TO_FP32(a_blk->d));
+                accf01 = _mm512_fmadd_ps(f01, _mm512_mul_ps(d0v01, d1), accf01);
+                accf23 = _mm512_fmadd_ps(f23, _mm512_mul_ps(d0v23, d1), accf23);
+            }
+        }
+
+        _mm_storeu_ps(s + x * 4, q1_acc_pair_reduce_ps(accf01, accf23));
+    }
+    return;
+#endif
+    ggml_gemv_q1_0_4x8_q8_0_generic(n, s, bs, vx, vy, nr, nc);
+}
+
+void ggml_gemm_q1_0_4x8_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, const void * GGML_RESTRICT vy, int nr, int nc) {
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512DQ__) && defined(__AVX512VNNI__) && defined(__F16C__)
+    const int nb = n / QK1_0;
+
+    assert(n % QK1_0 == 0);
+    assert(nr % 4 == 0);
+    assert(nc % 4 == 0);
+
+    const __m512i ones  = _mm512_set1_epi8(1);
+    const __m512i idx01 = _mm512_set_epi32(1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0);
+    const __m512i idx23 = _mm512_set_epi32(3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2);
+    __m512i rowidx[4];
+    for (int m = 0; m < 4; ++m) {
+        rowidx[m] = _mm512_set_epi64(12 + m, 8 + m, 4 + m, m, 12 + m, 8 + m, 4 + m, m);
+    }
+
+    int y = 0;
+    const int act_tile = celiums_exact_q1_gemm_act_tile_rows(nr);
+    /* 8 activation rows share one weight expand: halves weight traffic vs 4-row tiles. */
+    for (; act_tile >= 8 && y + 8 <= nr; y += 8) {
+        const block_q8_0x4 * a0 = (const block_q8_0x4 *) vy + (y * nb);
+        const block_q8_0x4 * a1 = a0 + (4 * nb);
+        for (int x = 0; x < nc / 4; x++) {
+            const block_q1_0x4 * b_ptr = (const block_q1_0x4 *) vx + (x * nb);
+            __m512 accf01[8];
+            __m512 accf23[8];
+            for (int m = 0; m < 8; m++) {
+                accf01[m] = _mm512_setzero_ps();
+                accf23[m] = _mm512_setzero_ps();
+            }
+
+            for (int l = 0; l < nb; l++) {
+                const __m512 d0    = _mm512_castps128_ps512(_mm_cvtph_ps(_mm_loadl_epi64((const __m128i *) b_ptr[l].d)));
+                const __m512 d0v01 = _mm512_permutexvar_ps(idx01, d0);
+                const __m512 d0v23 = _mm512_permutexvar_ps(idx23, d0);
+
+                for (int k = 0; k < QK1_0 / QK8_0; ++k) {
+                    __m512i w01, w23;
+                    q1_0_expand_x4((const uint8_t *) b_ptr[l].qs + 16 * k, &w01, &w23);
+                    q1_vnni_acc_4rows(a0 + 4 * l + k, w01, w23, d0v01, d0v23, ones, rowidx, accf01, accf23);
+                    q1_vnni_acc_4rows(a1 + 4 * l + k, w01, w23, d0v01, d0v23, ones, rowidx, accf01 + 4, accf23 + 4);
+                }
+            }
+
+            for (int m = 0; m < 8; m++) {
+                _mm_storeu_ps(s + (y + m) * bs + x * 4, q1_acc_pair_reduce_ps(accf01[m], accf23[m]));
+            }
+        }
+    }
+    for (; y + 4 <= nr; y += 4) {
+        const block_q8_0x4 * a_ptr = (const block_q8_0x4 *) vy + (y * nb);
+        for (int x = 0; x < nc / 4; x++) {
+            const block_q1_0x4 * b_ptr = (const block_q1_0x4 *) vx + (x * nb);
+            __m512 accf01[4];
+            __m512 accf23[4];
+            for (int m = 0; m < 4; m++) {
+                accf01[m] = _mm512_setzero_ps();
+                accf23[m] = _mm512_setzero_ps();
+            }
+
+            for (int l = 0; l < nb; l++) {
+                const __m512 d0    = _mm512_castps128_ps512(_mm_cvtph_ps(_mm_loadl_epi64((const __m128i *) b_ptr[l].d)));
+                const __m512 d0v01 = _mm512_permutexvar_ps(idx01, d0);
+                const __m512 d0v23 = _mm512_permutexvar_ps(idx23, d0);
+
+                for (int k = 0; k < QK1_0 / QK8_0; ++k) {
+                    __m512i w01, w23;
+                    q1_0_expand_x4((const uint8_t *) b_ptr[l].qs + 16 * k, &w01, &w23);
+                    q1_vnni_acc_4rows(a_ptr + 4 * l + k, w01, w23, d0v01, d0v23, ones, rowidx, accf01, accf23);
+                }
+            }
+
+            for (int m = 0; m < 4; m++) {
+                _mm_storeu_ps(s + (y + m) * bs + x * 4, q1_acc_pair_reduce_ps(accf01[m], accf23[m]));
+            }
+        }
+    }
+    return;
+#endif
+    ggml_gemm_q1_0_4x8_q8_0_generic(n, s, bs, vx, vy, nr, nc);
 }

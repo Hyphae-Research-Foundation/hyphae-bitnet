@@ -1,0 +1,6 @@
+Celiums BitNet Runtime 0.3.0
+product commit: unknown
+engine commit: e1002b8be
+engine tree: 3e44df24acb33ac5fb4f55ae74da6186e692de37
+cpu profile: native
+strict: true

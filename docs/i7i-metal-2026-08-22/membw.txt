@@ -1,0 +1,3 @@
+threads=1 bytes=2147483648 seconds=0.166902 gbps=12.87
+threads=48 bytes=2147483648 seconds=0.018075 gbps=118.81
+threads=96 bytes=2147483648 seconds=0.019498 gbps=110.14

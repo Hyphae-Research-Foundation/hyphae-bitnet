@@ -1,0 +1,1 @@
+Linux ip-10-42-1-61 6.17.0-1019-aws #19~24.04.1-Ubuntu SMP Tue Jun 23 18:34:05 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux

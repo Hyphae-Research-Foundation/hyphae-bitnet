@@ -14,6 +14,10 @@ celiums-bitnet validate --model model.gguf
 celiums-bitnet version
 ```
 
+Commands default to the certified `bitnet` model family. A pre-quantized
+PrismML Bonsai 27B `Q1_0` model can be selected explicitly with
+`--model-family bonsai`. Bonsai `Q2_0` is not supported.
+
 `run`, `bench`, and `serve` use the Celiums Runtime C API directly. The native
 server exposes `/health`, `/v1/health`, `/v1/models`, `/v1/completions`, and
 `/v1/chat/completions`. The `llama-*` binaries remain optional compatibility
@@ -59,6 +63,27 @@ The stronger Python conversion validator additionally checks required
 projections, rank, dimensions, byte counts, and scales. Neither path currently
 scans every packed field for reserved code 3.
 
+The additive `celiums_bitnet_model_load_family()` and
+`celiums_bitnet_model_validate_family()` APIs expose the inherited CPU text
+path for `qwen35` models marked as `MOSTLY_Q1_0` (file type 40). Callers must
+select `CELIUMS_BITNET_MODEL_FAMILY_BONSAI_QWEN35_Q1_0` explicitly. This does
+not extend the strict I2_S numerical contract to Bonsai and does not add model
+conversion, vision, GPU offload, speculative decoding, or Prism `Q2_0`.
+Native x86 builds keep Q1_0 as bit-packed 4×8 VNNI panels and reuse each
+panel across eight activation rows in prefill GEMM. AVX2 and scalar builds
+keep the ordinary Q1_0 path. ARM with i8mm expands Q1_0 to q8_0 ±1 so the
+existing i8mm kernels run.
+
+A runtime RAM budget (`celiums_bitnet_runtime_options.ram_budget_bytes`,
+`--ram-budget-bytes`) bounds both the in-RAM compute image and extra decode
+slots (`n_seq`). Zero selects an automatic cap: half of host RAM, never more
+than 90%, always leaving at least 4 GiB or 10% free so the host stays usable
+for serving. Model load and session create fail closed with
+`CELIUMS_BITNET_STATUS_RAM_BUDGET_EXCEEDED` instead of allocating past the
+cap. `--compute-layout 1` (the default) materializes the ISA compute image:
+ARM with i8mm expands Q1_0 1-bit weights to q8_0 4×8 ±1; x86 keeps bit-packed
+Q1 4×8 VNNI panels. `run`, `bench`, and `serve` all honor these options.
+
 ## Build Profiles
 
 `CELIUMS_BITNET_CPU_PROFILE` selects one of:
@@ -72,9 +97,10 @@ The `native` release archive is host-class-specific because it uses
 archives are built on Ubuntu 24.04; profile names do not promise compatibility
 with older glibc or libstdc++ userspaces.
 
-Strict I2_S is the supported product conversion. TL1/TL2, quantized embeddings,
-GPU, Swift, and Android remain experimental or inherited and are outside the
-release gate. Strict mode is currently mandatory. CMake rejects
+Strict I2_S is the supported product conversion. Pre-quantized Bonsai Q1_0 is
+an explicit inherited runtime compatibility profile. TL1/TL2, quantized
+embeddings, GPU, Swift, and Android remain experimental or inherited and are
+outside the release gate. Strict mode is currently mandatory. CMake rejects
 `CELIUMS_BITNET_STRICT=OFF`, because a non-strict product profile has not been
 implemented. TL1 and TL2 require `CELIUMS_BITNET_EXPERIMENTAL=ON`.
 

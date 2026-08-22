@@ -1,0 +1,16 @@
+# started on Sat Aug 22 02:55:52 2026
+
+
+ Performance counter stats for '/home/ubuntu/build-native/bin/llama-bench -m /home/ubuntu/models/Bonsai-27B-Q1_0.gguf -p 32 -n 64 -t 1 -b 128 -ub 128 --cpu-strict 1 -ngl 0 --numa isolate -r 1 -o json':
+
+      327759081680      cycles                                                                
+      723969674370      instructions                     #    2.21  insn per cycle            
+        5917602714      cache-references                                                      
+        3879141561      cache-misses                     #   65.55% of all cache refs         
+
+      81.942578190 seconds time elapsed
+
+      80.668567000 seconds user
+       1.256743000 seconds sys
+
+

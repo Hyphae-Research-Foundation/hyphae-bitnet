@@ -1,0 +1,5 @@
+{
+    "Id": "i-0e78621613c664cd8",
+    "State": "terminated",
+    "Type": "r8g.metal-24xl"
+}
