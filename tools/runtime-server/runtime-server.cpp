@@ -176,16 +176,20 @@ bool parse(int argc, char ** argv, server_options & result) {
             "refusing unauthenticated remote host '" + result.host +
             "'; use --api-key, --api-key-file, or --allow-unauthenticated-remote");
     }
-    if (!result.api_key.empty()) {
-#ifdef _WIN32
-        _putenv_s("CELIUMS_BITNET_API_KEY", result.api_key.c_str());
-#else
-        setenv("CELIUMS_BITNET_API_KEY", result.api_key.c_str(), 1);
-#endif
-    }
     return result.model && result.port > 0 && result.port <= 65535 && result.context_size > 0 &&
         result.batch_size > 0 && result.ubatch_size > 0 && result.threads > 0 &&
         result.threads_batch > 0 && result.n_seq > 0;
+}
+
+bool key_equal(const std::string & left, const std::string & right) {
+    const size_t n = left.size() > right.size() ? left.size() : right.size();
+    unsigned diff = (unsigned) (left.size() != right.size());
+    for (size_t index = 0; index < n; ++index) {
+        const unsigned char a = index < left.size() ? (unsigned char) left[index] : 0;
+        const unsigned char b = index < right.size() ? (unsigned char) right[index] : 0;
+        diff |= (unsigned) (a ^ b);
+    }
+    return diff == 0;
 }
 
 bool authorized(const httplib::Request & request, const std::string & api_key) {
@@ -194,7 +198,7 @@ bool authorized(const httplib::Request & request, const std::string & api_key) {
     const std::string prefix = "Bearer ";
     if (supplied.rfind(prefix, 0) == 0) supplied.erase(0, prefix.size());
     if (supplied.empty()) supplied = request.get_header_value("X-Api-Key");
-    return supplied == api_key;
+    return key_equal(supplied, api_key);
 }
 
 void set_json(httplib::Response & response, const json & body, int status = 200) {
@@ -363,6 +367,7 @@ int celiums_runtime_server(int argc, char ** argv) {
     server_metrics metrics;
     std::atomic<uint64_t> request_id { 0 };
     httplib::Server server;
+    server.set_payload_max_length(4 * 1024 * 1024);
     server.set_pre_routing_handler([&](const httplib::Request & request, httplib::Response & response) {
         response.set_header("X-Celiums-BitNet-Runtime", celiums_bitnet_version());
         if (authorized(request, options.api_key)) {
@@ -398,8 +403,9 @@ int celiums_runtime_server(int argc, char ** argv) {
                 ++metrics.failures;
                 return;
             }
-            const int32_t max_tokens = body.value("max_tokens", 128);
+            int32_t max_tokens = body.value("max_tokens", 128);
             if (max_tokens < 0) throw std::invalid_argument("max_tokens must be nonnegative");
+            if (max_tokens > 4096) max_tokens = 4096;
             auto generation = celiums_bitnet_generation_default_options();
             generation.max_tokens = max_tokens;
             generation.temperature = body.value("temperature", 0.8f);
@@ -409,13 +415,19 @@ int celiums_runtime_server(int argc, char ** argv) {
             const std::string id = (chat ? "chatcmpl-celiums-" : "cmpl-celiums-") +
                 std::to_string(request_id.fetch_add(1));
 
+            if (metrics.active.load() >= 8) {
+                set_error(response, "server busy", "server_error", 503);
+                ++metrics.failures;
+                return;
+            }
             if (body.value("stream", false)) {
                 response.set_header("Cache-Control", "no-cache");
                 response.set_header("X-Accel-Buffering", "no");
                 auto streamed = std::make_shared<bool>(false);
                 response.set_chunked_content_provider(
                     "text/event-stream; charset=utf-8",
-                    [&, streamed, prompt, generation, id, chat, connection_closed = request.is_connection_closed]
+                    [&, streamed, prompt, generation, id, chat, max_tokens,
+                        connection_closed = request.is_connection_closed]
                     (size_t, httplib::DataSink & sink) mutable {
                         if (*streamed) {
                             sink.done();
@@ -477,8 +489,10 @@ int celiums_runtime_server(int argc, char ** argv) {
                     state.status == CELIUMS_BITNET_STATUS_CALLBACK_ABORTED;
                 if (cancelled) ++metrics.cancelled;
                 else ++metrics.failures;
+                const int http_status = cancelled ? 499
+                    : state.status == CELIUMS_BITNET_STATUS_RAM_BUDGET_EXCEEDED ? 503 : 500;
                 set_error(response, celiums_bitnet_status_string(state.status),
-                    cancelled ? "cancelled_error" : "server_error", cancelled ? 499 : 500);
+                    cancelled ? "cancelled_error" : "server_error", http_status);
                 destroy_generation(state);
                 return;
             }

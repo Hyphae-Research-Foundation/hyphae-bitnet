@@ -128,7 +128,10 @@ int main(int argc, char ** argv) {
     if (celiums_bitnet_session_sample(session, &greedy, &sampled) != CELIUMS_BITNET_STATUS_OK ||
             celiums_bitnet_session_decode(session, sampled, true) != CELIUMS_BITNET_STATUS_OK) return 1;
     celiums_bitnet_session_reset(session);
+    size_t reset_logits = 0;
     if (celiums_bitnet_session_position(session) != 0 ||
+            celiums_bitnet_session_copy_logits(session, nullptr, &reset_logits) !=
+                CELIUMS_BITNET_STATUS_INVALID_ARGUMENT ||
             celiums_bitnet_session_prefill(session, tokens.data(), token_count, true) != CELIUMS_BITNET_STATUS_OK) return 1;
     std::vector<float> replay_logits(logits_count);
     if (celiums_bitnet_session_copy_logits(session, replay_logits.data(), &logits_count) != CELIUMS_BITNET_STATUS_OK) return 1;
