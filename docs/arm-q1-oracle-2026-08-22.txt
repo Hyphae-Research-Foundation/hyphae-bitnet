@@ -1,0 +1,7 @@
+Celiums BitNet 0.3.1 ARM Q1 oracle
+instance: i-0782a1cf2183ddc42 c8g.2xlarge us-east-1a
+cpu: Neoverse-V2 (i8mm, svei8mm)
+cmake: HAVE_MATMUL_INT8=Success HAVE_DOTPROD=Success
+test-q1-repack-oracle: ok (packed/exact-lib vs expanded i8mm layout)
+test-celiums-runtime-api: ok
+instance terminated after the run

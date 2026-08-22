@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 - 2026-08-22
 
 - Treat host RAM as a serving lever under an explicit cap. Model load and
   session create fail closed with `CELIUMS_BITNET_STATUS_RAM_BUDGET_EXCEEDED`
-  instead of allocating past `--ram-budget-bytes`.
+  instead of allocating past `--ram-budget-bytes`. The runtime keeps an
+  aggregate `reserved_bytes` ledger.
 - Materialize an ISA compute layout for Bonsai Q1_0: ARM i8mm expands 1-bit
   weights to q8_0 ±1; x86 keeps bit-packed 4×8 VNNI panels. Packed GGUF stays
   the durable store.
@@ -12,10 +13,16 @@
   GEMM (AVX-512 VNNI and the generic kernel). Decode remains GEMV.
 - Add in-tree `celiums-exact` for 2P−S, Q1 4×8 pack, the tile planner, and
   I2_S `(D−S)ρ` recovery. Kernels and oracles call the same math.
+- Reject `n_seq > 1` at session create and CLI/server/bench parse. Decode
+  always uses `seq_id 0`; estimates may still use `n_seq` for planning.
+- Close HTTP audit holes: stream `max_tokens` captured by value, no `setenv`
+  of the API key, 4 MiB body cap, `max_tokens` ≤ 4096, ≤ 8 concurrent
+  generations.
 - Expose `--model-family bonsai`, `--compute-layout`, `--n-seq`, and
   `--ram-budget-bytes` on `run`, `bench`, and `serve`.
 - Record AWS metal receipts for Bonsai Q1_0 on r8g.metal-24xl (Graviton 4)
-  and i7i.metal-24xl (Xeon 8559C).
+  and i7i.metal-24xl (Xeon 8559C). Q1 oracle passed on Graviton 4
+  (`c8g.2xlarge`, Neoverse-V2, i8mm).
 
 ## 0.3.0 - 2026-08-20
 

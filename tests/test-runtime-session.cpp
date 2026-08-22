@@ -62,9 +62,18 @@ int main(int argc, char ** argv) {
     if (status != CELIUMS_BITNET_STATUS_OK || celiums_bitnet_model_get_family(model) != family) return 1;
 
     {
+        auto multi = session_options;
+        multi.n_seq = 2;
+        celiums_bitnet_session * multi_denied = nullptr;
+        if (celiums_bitnet_session_create(model, &multi, &multi_denied) !=
+                CELIUMS_BITNET_STATUS_INVALID_ARGUMENT || multi_denied != nullptr) {
+            fprintf(stderr, "n_seq>1 must fail closed\n");
+            return 1;
+        }
+
         auto tight = session_options;
         tight.ram_budget_bytes = 64;
-        tight.n_seq = 8;
+        tight.n_seq = 1;
         tight.context_size = 2048;
         tight.use_compute_layout = true;
         celiums_bitnet_session * denied = nullptr;

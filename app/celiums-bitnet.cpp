@@ -79,7 +79,7 @@ void print_run_help(const char * program) {
     printf("  --seed N                 sampling seed\n");
     printf("  --stop TEXT              repeatable stop sequence\n");
     printf("  --model-family FAMILY    bitnet (default) or bonsai\n");
-    printf("  --n-seq N                decode slots sharing the weight image (default 1)\n");
+    printf("  --n-seq N                must be 1; multi-sequence decode is not supported\n");
     printf("  --ram-budget-bytes N     RAM cap; 0 = auto (half host, with headroom)\n");
     printf("  --compute-layout 0|1     in-RAM compute image (default 1)\n");
 }
@@ -140,8 +140,8 @@ int run_inference(int argc, char ** argv) {
             else if (argument == "--stop") options.stop_sequences.push_back(value);
             else if (argument == "--n-seq") {
                 const int parsed = parse_int(value);
-                if (parsed <= 0) {
-                    throw std::invalid_argument("n-seq must be positive");
+                if (parsed != 1) {
+                    throw std::invalid_argument("n-seq must be 1; multi-sequence decode is not supported");
                 }
                 options.n_seq = (uint32_t) parsed;
             }

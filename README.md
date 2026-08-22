@@ -6,7 +6,7 @@
 
 [![License](https://img.shields.io/badge/Celiums%20code-Apache--2.0-blue.svg)](LICENSE)
 [![Upstream](https://img.shields.io/badge/upstream-Microsoft%20BitNet-5C2D91.svg)](UPSTREAM.md)
-[![Version](https://img.shields.io/badge/version-0.3.0-111827.svg)](CHANGES.md)
+[![Version](https://img.shields.io/badge/version-0.3.1-111827.svg)](CHANGES.md)
 [![I2_S](https://img.shields.io/badge/I2__S-contract%20validated-0F766E.svg)](docs/NUMERICAL_CONTRACT.md)
 [![Q1](https://img.shields.io/badge/Bonsai%20Q1-CPU%20text-111827.svg)](docs/VENDORED_CPU_HOT_PATH.md)
 
@@ -99,7 +99,7 @@ oracles call it so tests do not reimplement the unit under test.
 | `--model-family bitnet\|bonsai` | `bitnet` | Architecture + file-type gate |
 | `--compute-layout 0\|1` | `1` | ISA working set (expand or 4×8 panels) |
 | `--ram-budget-bytes N` | auto: ~half of host RAM, always headroom | Fail-closed cap |
-| `--n-seq N` | `1` | Concurrent decode states sharing one weight image |
+| `--n-seq N` | `1` | Must be 1. `n_seq > 1` is rejected (decode is seq_id 0 only) |
 | `--threads` / `--threads-batch` | | Decode vs prefill parallelism |
 
 Zero budget means auto: half of host RAM, never more than 90%, always

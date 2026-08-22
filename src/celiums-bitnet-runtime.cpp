@@ -799,7 +799,7 @@ celiums_bitnet_status celiums_bitnet_session_create(
     *session = nullptr;
     const celiums_bitnet_session_options resolved = options ? *options : celiums_bitnet_session_default_options();
     if (resolved.context_size == 0 || resolved.batch_size == 0 || resolved.ubatch_size == 0 ||
-            resolved.threads <= 0 || resolved.threads_batch <= 0 || resolved.n_seq == 0) {
+            resolved.threads <= 0 || resolved.threads_batch <= 0 || resolved.n_seq != 1) {
         return CELIUMS_BITNET_STATUS_INVALID_ARGUMENT;
     }
     const uint64_t budget = resolved.ram_budget_bytes

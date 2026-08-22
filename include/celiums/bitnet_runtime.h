@@ -85,7 +85,7 @@ typedef struct celiums_bitnet_session_options {
     uint32_t ubatch_size;
     int32_t threads;
     int32_t threads_batch;
-    /* Distinct decode states sharing one weight image. 1 = single sequence. */
+    /* Must be 1. Decode always uses seq_id 0; n_seq > 1 is rejected at create. */
     uint32_t n_seq;
     /* 0 = inherit the runtime budget. Extra KV/layout must fit or create fails. */
     uint64_t ram_budget_bytes;

@@ -62,7 +62,8 @@ bool parse(int argc, char ** argv, options & result) {
         else return false;
     }
     return result.model && result.prompt_tokens >= 0 && result.generated_tokens >= 0 &&
-        result.batch > 0 && result.ubatch > 0 && result.threads > 0 && result.repetitions > 0;
+        result.batch > 0 && result.ubatch > 0 && result.threads > 0 && result.repetitions > 0 &&
+        result.n_seq == 1;
 }
 
 std::string make_prompt(int32_t target_tokens) {

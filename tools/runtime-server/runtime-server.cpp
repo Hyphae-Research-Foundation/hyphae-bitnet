@@ -75,7 +75,7 @@ void usage(const char * program) {
     printf("  --api-key-file PATH               read the API key from PATH\n");
     printf("  --allow-unauthenticated-remote    permit a remote bind without authentication\n");
     printf("  --model-family FAMILY             bitnet (default) or bonsai\n");
-    printf("  --n-seq N                         decode slots sharing the weight image (default 1)\n");
+    printf("  --n-seq N                         must be 1; multi-sequence decode is not supported\n");
     printf("  --ram-budget-bytes N              RAM cap; 0 = auto (half host, with headroom)\n");
     printf("  --compute-layout 0|1              in-RAM compute image (default 1)\n");
 }
@@ -178,7 +178,7 @@ bool parse(int argc, char ** argv, server_options & result) {
     }
     return result.model && result.port > 0 && result.port <= 65535 && result.context_size > 0 &&
         result.batch_size > 0 && result.ubatch_size > 0 && result.threads > 0 &&
-        result.threads_batch > 0 && result.n_seq > 0;
+        result.threads_batch > 0 && result.n_seq == 1;
 }
 
 bool key_equal(const std::string & left, const std::string & right) {
