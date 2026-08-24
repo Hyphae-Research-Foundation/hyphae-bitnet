@@ -7,6 +7,10 @@ on:
         description: "Existing release tag"
         required: true
         type: string
+      version:
+        description: "VERSION value contained by the tagged source"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -24,21 +28,22 @@ jobs:
         with:
           ref: ${{ inputs.tag }}
       - uses: dtolnay/rust-toolchain@1.97.1
-      - run: test "$(tr -d '[:space:]' < VERSION)" = "${RELEASE_TAG#v}"
+      - run: test "$(tr -d '[:space:]' < VERSION)" = "${RELEASE_VERSION}"
         env:
-          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_VERSION: ${{ inputs.version }}
       - run: >-
           JOBS=2 ./scripts/package-runtime.sh ${{ matrix.profile }}
           /tmp/release-build-${{ matrix.profile }}
           /tmp/stage-release-${{ matrix.profile }}
-          hyphae-bitnet-runtime-${RELEASE_TAG#v}-linux-x86_64-${{ matrix.profile }}.tar.gz
+          hyphae-bitnet-runtime-${RELEASE_VERSION}-linux-x86_64-${{ matrix.profile }}.tar.gz
         env:
-          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_VERSION: ${{ inputs.version }}
       - run: >-
           gh release upload "${RELEASE_TAG}"
-          hyphae-bitnet-runtime-${RELEASE_TAG#v}-linux-x86_64-${{ matrix.profile }}.tar.gz
-          hyphae-bitnet-runtime-${RELEASE_TAG#v}-linux-x86_64-${{ matrix.profile }}.tar.gz.json
+          hyphae-bitnet-runtime-${RELEASE_VERSION}-linux-x86_64-${{ matrix.profile }}.tar.gz
+          hyphae-bitnet-runtime-${RELEASE_VERSION}-linux-x86_64-${{ matrix.profile }}.tar.gz.json
           --clobber
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_VERSION: ${{ inputs.version }}
