@@ -6,7 +6,7 @@
 
 [![License](https://img.shields.io/badge/Hyphae%20BitNet-Apache--2.0-blue.svg)](LICENSE)
 [![Upstream](https://img.shields.io/badge/upstream-Microsoft%20BitNet-5C2D91.svg)](UPSTREAM.md)
-[![Version](https://img.shields.io/badge/version-0.3.1-111827.svg)](CHANGES.md)
+[![Version](https://img.shields.io/badge/version-0.3.2-111827.svg)](CHANGES.md)
 [![I2_S](https://img.shields.io/badge/I2__S-contract%20validated-0F766E.svg)](docs/NUMERICAL_CONTRACT.md)
 [![Q1](https://img.shields.io/badge/Bonsai%20Q1-CPU%20text-111827.svg)](docs/VENDORED_CPU_HOT_PATH.md)
 
@@ -410,6 +410,15 @@ Header: [`include/celiums/bitnet_runtime.h`](include/celiums/bitnet_runtime.h).
 Runtime / Model / Session / Request handles; provenance; family-gated load;
 tokenize; prefill/decode/logits/sample; RAM budget; compute layout; `n_seq`.
 The ABI is 0.x. A Session serializes mutable context operations.
+
+The original option structs and by-value default functions retain their exact
+v0.3.0 LP64 ABI. New callers needing RAM budgets, compute layouts, `n_seq`, or
+family-aware loading should initialize `celiums_bitnet_*_options_ex` through
+the matching `celiums_bitnet_*_options_ex_init()` caller-buffer API and use the
+`_ex` create/load/session/estimate functions. Legacy calls use `n_seq = 1`, do
+not request a compute layout, and use the safe automatic runtime RAM budget.
+Binaries compiled against the broken v0.3.1 expanded option-return layouts must
+be rebuilt; one unversioned symbol cannot implement both return conventions.
 
 ### Native HTTP API
 

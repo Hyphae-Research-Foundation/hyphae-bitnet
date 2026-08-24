@@ -7,10 +7,8 @@ snapshots are supported on a best-effort basis.
 
 ## Reporting A Vulnerability
 
-Do not disclose vulnerabilities in a public issue. Use private vulnerability
-reporting on the Hyphae BitNet repository when it is available, or contact
-Celiums Solutions LLC through the private security channel listed on the
-Celiums organization profile.
+Do not disclose vulnerabilities in a public issue. Use
+[GitHub private vulnerability reporting](https://github.com/Hyphae-Research-Foundation/hyphae-bitnet/security/advisories/new).
 
 Include the affected version or commit, configuration, reproduction steps,
 impact, and any proof of concept that can be shared safely.

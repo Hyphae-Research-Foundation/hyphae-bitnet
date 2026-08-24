@@ -167,17 +167,24 @@ int run_inference(int argc, char ** argv) {
     celiums_bitnet_request * request = nullptr;
     celiums_bitnet_status status;
 
-    celiums_bitnet_runtime_options runtime_options = celiums_bitnet_runtime_default_options();
+    celiums_bitnet_runtime_options_ex runtime_options;
+    status = celiums_bitnet_runtime_options_ex_init(&runtime_options, sizeof(runtime_options));
     runtime_options.ram_budget_bytes = options.ram_budget_bytes;
-    status = celiums_bitnet_runtime_create(&runtime_options, &runtime);
     if (status == CELIUMS_BITNET_STATUS_OK) {
-        celiums_bitnet_model_options model_options = celiums_bitnet_model_default_options();
-        model_options.use_compute_layout = options.use_compute_layout;
-        status = celiums_bitnet_model_load_family(
-            runtime, options.model, options.family, &model_options, &model);
+        status = celiums_bitnet_runtime_create_ex(&runtime_options, &runtime);
     }
     if (status == CELIUMS_BITNET_STATUS_OK) {
-        celiums_bitnet_session_options session_options = celiums_bitnet_session_default_options();
+        celiums_bitnet_model_options_ex model_options;
+        status = celiums_bitnet_model_options_ex_init(&model_options, sizeof(model_options));
+        model_options.use_compute_layout = options.use_compute_layout;
+        if (status == CELIUMS_BITNET_STATUS_OK) {
+            status = celiums_bitnet_model_load_family_ex(
+                runtime, options.model, options.family, &model_options, &model);
+        }
+    }
+    if (status == CELIUMS_BITNET_STATUS_OK) {
+        celiums_bitnet_session_options_ex session_options;
+        status = celiums_bitnet_session_options_ex_init(&session_options, sizeof(session_options));
         session_options.context_size = options.context_size;
         session_options.batch_size = options.batch_size;
         session_options.ubatch_size = options.ubatch_size;
@@ -186,7 +193,9 @@ int run_inference(int argc, char ** argv) {
         session_options.n_seq = options.n_seq;
         session_options.ram_budget_bytes = options.ram_budget_bytes;
         session_options.use_compute_layout = options.use_compute_layout;
-        status = celiums_bitnet_session_create(model, &session_options, &session);
+        if (status == CELIUMS_BITNET_STATUS_OK) {
+            status = celiums_bitnet_session_create_ex(model, &session_options, &session);
+        }
     }
     if (status == CELIUMS_BITNET_STATUS_OK) {
         status = celiums_bitnet_request_create(session, &request);
@@ -251,8 +260,12 @@ int validate_model(int argc, char ** argv) {
     }
 
     celiums_bitnet_runtime * runtime = nullptr;
-    celiums_bitnet_runtime_options runtime_options = celiums_bitnet_runtime_default_options();
-    celiums_bitnet_status status = celiums_bitnet_runtime_create(&runtime_options, &runtime);
+    celiums_bitnet_runtime_options_ex runtime_options;
+    celiums_bitnet_status status = celiums_bitnet_runtime_options_ex_init(
+        &runtime_options, sizeof(runtime_options));
+    if (status == CELIUMS_BITNET_STATUS_OK) {
+        status = celiums_bitnet_runtime_create_ex(&runtime_options, &runtime);
+    }
     celiums_bitnet_model_info info = {};
     info.struct_size = sizeof(info);
     info.api_version = CELIUMS_BITNET_API_VERSION;

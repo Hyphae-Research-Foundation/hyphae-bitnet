@@ -121,17 +121,24 @@ int celiums_runtime_bench(int argc, char ** argv) {
     celiums_bitnet_runtime * runtime = nullptr;
     celiums_bitnet_model * model = nullptr;
     celiums_bitnet_session * session = nullptr;
-    auto runtime_options = celiums_bitnet_runtime_default_options();
+    celiums_bitnet_runtime_options_ex runtime_options;
+    auto status = celiums_bitnet_runtime_options_ex_init(&runtime_options, sizeof(runtime_options));
     runtime_options.ram_budget_bytes = benchmark.ram_budget_bytes;
-    auto status = celiums_bitnet_runtime_create(&runtime_options, &runtime);
     if (status == CELIUMS_BITNET_STATUS_OK) {
-        auto model_options = celiums_bitnet_model_default_options();
-        model_options.use_compute_layout = benchmark.use_compute_layout;
-        status = celiums_bitnet_model_load_family(
-            runtime, benchmark.model, benchmark.family, &model_options, &model);
+        status = celiums_bitnet_runtime_create_ex(&runtime_options, &runtime);
     }
     if (status == CELIUMS_BITNET_STATUS_OK) {
-        auto session_options = celiums_bitnet_session_default_options();
+        celiums_bitnet_model_options_ex model_options;
+        status = celiums_bitnet_model_options_ex_init(&model_options, sizeof(model_options));
+        model_options.use_compute_layout = benchmark.use_compute_layout;
+        if (status == CELIUMS_BITNET_STATUS_OK) {
+            status = celiums_bitnet_model_load_family_ex(
+                runtime, benchmark.model, benchmark.family, &model_options, &model);
+        }
+    }
+    if (status == CELIUMS_BITNET_STATUS_OK) {
+        celiums_bitnet_session_options_ex session_options;
+        status = celiums_bitnet_session_options_ex_init(&session_options, sizeof(session_options));
         session_options.context_size = std::max(512, benchmark.prompt_tokens + benchmark.generated_tokens + 16);
         session_options.batch_size = benchmark.batch;
         session_options.ubatch_size = benchmark.ubatch;
@@ -140,7 +147,9 @@ int celiums_runtime_bench(int argc, char ** argv) {
         session_options.n_seq = benchmark.n_seq;
         session_options.ram_budget_bytes = benchmark.ram_budget_bytes;
         session_options.use_compute_layout = benchmark.use_compute_layout;
-        status = celiums_bitnet_session_create(model, &session_options, &session);
+        if (status == CELIUMS_BITNET_STATUS_OK) {
+            status = celiums_bitnet_session_create_ex(model, &session_options, &session);
+        }
     }
     if (status != CELIUMS_BITNET_STATUS_OK) {
         fprintf(stderr, "runtime benchmark: %s\n", celiums_bitnet_status_string(status));

@@ -290,7 +290,8 @@ void create_generation(
         celiums_bitnet_model * model,
         const server_options & options,
         generation_state & state) {
-    auto session_options = celiums_bitnet_session_default_options();
+    celiums_bitnet_session_options_ex session_options;
+    state.status = celiums_bitnet_session_options_ex_init(&session_options, sizeof(session_options));
     session_options.context_size = options.context_size;
     session_options.batch_size = options.batch_size;
     session_options.ubatch_size = options.ubatch_size;
@@ -299,7 +300,9 @@ void create_generation(
     session_options.n_seq = options.n_seq;
     session_options.ram_budget_bytes = options.ram_budget_bytes;
     session_options.use_compute_layout = options.use_compute_layout;
-    state.status = celiums_bitnet_session_create(model, &session_options, &state.session);
+    if (state.status == CELIUMS_BITNET_STATUS_OK) {
+        state.status = celiums_bitnet_session_create_ex(model, &session_options, &state.session);
+    }
     if (state.status == CELIUMS_BITNET_STATUS_OK) {
         state.status = celiums_bitnet_request_create(state.session, &state.request);
     }
@@ -349,14 +352,20 @@ int celiums_runtime_server(int argc, char ** argv) {
 
     celiums_bitnet_runtime * runtime = nullptr;
     celiums_bitnet_model * model = nullptr;
-    auto runtime_options = celiums_bitnet_runtime_default_options();
+    celiums_bitnet_runtime_options_ex runtime_options;
+    auto status = celiums_bitnet_runtime_options_ex_init(&runtime_options, sizeof(runtime_options));
     runtime_options.ram_budget_bytes = options.ram_budget_bytes;
-    auto status = celiums_bitnet_runtime_create(&runtime_options, &runtime);
     if (status == CELIUMS_BITNET_STATUS_OK) {
-        auto model_options = celiums_bitnet_model_default_options();
+        status = celiums_bitnet_runtime_create_ex(&runtime_options, &runtime);
+    }
+    if (status == CELIUMS_BITNET_STATUS_OK) {
+        celiums_bitnet_model_options_ex model_options;
+        status = celiums_bitnet_model_options_ex_init(&model_options, sizeof(model_options));
         model_options.use_compute_layout = options.use_compute_layout;
-        status = celiums_bitnet_model_load_family(
-            runtime, options.model, options.family, &model_options, &model);
+        if (status == CELIUMS_BITNET_STATUS_OK) {
+            status = celiums_bitnet_model_load_family_ex(
+                runtime, options.model, options.family, &model_options, &model);
+        }
     }
     if (status != CELIUMS_BITNET_STATUS_OK) {
         fprintf(stderr, "celiums-bitnet serve: %s\n", celiums_bitnet_status_string(status));

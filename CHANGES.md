@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.2 - 2026-08-24
+
+- Restore the v0.3.0 LP64 layouts and by-value return ABI for the original
+  Runtime, Model, and Session option structs. Add explicit `_ex` option structs,
+  caller-buffer initializers, consuming APIs, and RAM estimators for the 0.3.1
+  RAM budget, compute-layout, `n_seq`, and model-family behavior.
+- Compile and run a frozen-header v0.3.0 client against the current shared
+  library in CTest and installed-artifact validation. Binaries built against the
+  broken v0.3.1 expanded option-return layouts must rebuild. No v0.3.1 binary
+  release was published; the `.so.0` identity continues the released v0.3.0 ABI.
+- Correct the ARM packed compute-layout RAM estimate from 8x to 1x packed model
+  bytes and hide non-API C++ symbols by default.
+- Add an experimental Neoverse V2 SVE2 VL=128 packed Q1 GEMV path with
+  eight-output activation reuse and static contiguous decode scheduling. NEON
+  remains the default after whole-model A/B measurement; `GGML_Q1_SVE2=1`
+  enables the experimental path.
+- Reuse an exact Q8 activation packing between consecutive eligible Bonsai Q1
+  `CPU_REPACK` matrix multiplications with the same immutable F32 projection
+  source and packing layout. Non-eligible graph nodes may occur between the
+  projections; another eligible key replaces the one-entry cache. Workspace is
+  sized for the largest eligible candidate. The cache is
+  execution-owned, reset for every graph compute, and can be disabled with
+  `GGML_Q1_ACT_CACHE=0` for same-binary comparisons.
+
 ## 0.3.1 - 2026-08-22
 
 - Treat host RAM as a serving lever under an explicit cap. Model load and

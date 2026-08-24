@@ -71,18 +71,29 @@ not extend the strict I2_S numerical contract to Bonsai and does not add model
 conversion, vision, GPU offload, speculative decoding, or Prism `Q2_0`.
 Native x86 builds keep Q1_0 as bit-packed 4×8 VNNI panels and reuse each
 panel across eight activation rows in prefill GEMM. AVX2 and scalar builds
-keep the ordinary Q1_0 path. ARM with i8mm expands Q1_0 to q8_0 ±1 so the
-existing i8mm kernels run.
+keep the ordinary Q1_0 path. ARM with i8mm uses the packed Q1 repack path.
 
-A runtime RAM budget (`celiums_bitnet_runtime_options.ram_budget_bytes`,
+A runtime RAM budget (`celiums_bitnet_runtime_options_ex.ram_budget_bytes`,
 `--ram-budget-bytes`) bounds both the in-RAM compute image and extra decode
 slots (`n_seq`). Zero selects an automatic cap: half of host RAM, never more
 than 90%, always leaving at least 4 GiB or 10% free so the host stays usable
 for serving. Model load and session create fail closed with
 `CELIUMS_BITNET_STATUS_RAM_BUDGET_EXCEEDED` instead of allocating past the
 cap. `--compute-layout 1` (the default) materializes the ISA compute image:
-ARM with i8mm expands Q1_0 1-bit weights to q8_0 4×8 ±1; x86 keeps bit-packed
-Q1 4×8 VNNI panels. `run`, `bench`, and `serve` all honor these options.
+ARM and x86 account one packed model image for the materialized layout. ARM
+with i8mm uses a packed compute layout rather than the stale 8x expansion
+estimate; x86 keeps bit-packed Q1 4×8 VNNI panels. `run`, `bench`, and `serve`
+all honor these options.
+
+The legacy `celiums_bitnet_runtime_options`, `celiums_bitnet_model_options`, and
+`celiums_bitnet_session_options` are frozen at their v0.3.0 LP64 sizes (16, 16,
+and 32 bytes). Their by-value default functions retain the v0.3.0 calling
+convention. Extended controls live only in `celiums_bitnet_*_options_ex`, which
+must be initialized through the sized `*_options_ex_init()` functions and
+passed to `_ex` consumers. Legacy consumers never inspect model byte 15, use
+`n_seq = 1`, disable compute layout, and inherit the safe automatic runtime
+budget. Binaries compiled against the broken v0.3.1 expanded by-value returns
+must rebuild because the original unversioned symbols cannot serve both ABIs.
 
 ## Build Profiles
 

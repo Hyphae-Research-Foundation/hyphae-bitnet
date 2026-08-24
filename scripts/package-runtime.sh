@@ -84,7 +84,8 @@ source_date_epoch=${SOURCE_DATE_EPOCH:-$(git show -s --format=%ct HEAD)}
 
 "$cmake" --build "$build_dir" --parallel "${JOBS:-2}" --target \
   celiums-bitnet celiums-runtime-bench celiums-runtime-server \
-  celiums-runtime-gateway-binaries test-celiums-runtime-api test-celiums-runtime-session
+  celiums-runtime-gateway-binaries test-celiums-runtime-api \
+  test-celiums-runtime-v0.3.0-client test-celiums-runtime-session
 
 rm -rf "$stage_dir"
 DESTDIR="$stage_dir" "$cmake" --install "$build_dir"

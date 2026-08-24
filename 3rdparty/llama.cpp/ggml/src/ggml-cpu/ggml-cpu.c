@@ -507,7 +507,38 @@ struct ggml_threadpool {
     uint32_t     poll;        // Polling level (0 - no polling)
 
     enum ggml_status ec;
+
+    struct ggml_cpu_q1_act_cache q1_act_cache;
+    void *                       q1_act_cache_data; // dedicated; never exposed as per-op scratch
+    size_t                       q1_act_cache_size; // active size for the current execution
+    size_t                       q1_act_cache_capacity;
 };
+
+static bool ggml_q1_act_cache_candidate_size(
+        const struct ggml_tensor * node,
+        size_t *                   packed_size) {
+    const void * packing = NULL;
+    const bool eligible = ggml_cpu_q1_act_cache_info(node, &packing, packed_size);
+    UNUSED(packing);
+    return eligible;
+}
+
+static bool ggml_q1_act_cache_overlaps_node(
+        const struct ggml_cpu_q1_act_cache * cache,
+        const struct ggml_tensor *           node) {
+    if (!cache->valid || cache->src1 == NULL || cache->src1_data == NULL ||
+        node == NULL || node->data == NULL) {
+        return false;
+    }
+
+    const uintptr_t src_begin = (uintptr_t) cache->src1_data;
+    const uintptr_t dst_begin = (uintptr_t) node->data;
+    const size_t src_size = ggml_nbytes(cache->src1);
+    const size_t dst_size = ggml_nbytes(node);
+    const uintptr_t src_end = src_size > UINTPTR_MAX - src_begin ? UINTPTR_MAX : src_begin + src_size;
+    const uintptr_t dst_end = dst_size > UINTPTR_MAX - dst_begin ? UINTPTR_MAX : dst_begin + dst_size;
+    return src_size != 0 && dst_size != 0 && src_begin < dst_end && dst_begin < src_end;
+}
 
 // Per-thread state
 struct ggml_compute_state {
@@ -2960,6 +2991,7 @@ void ggml_threadpool_free(struct ggml_threadpool* threadpool) {
 
     const size_t workers_size = sizeof(struct ggml_compute_state) * n_threads;
     ggml_aligned_free(threadpool->workers, workers_size);
+    free(threadpool->q1_act_cache_data);
     ggml_aligned_free(threadpool, sizeof(struct ggml_threadpool));
 }
 
@@ -3300,6 +3332,10 @@ static thread_ret_t ggml_graph_compute_thread(void * data) {
         /*.wdata      =*/ cplan->work_data,
         /*.threadpool =*/ tp,
         /*.use_ref    =*/ cplan->use_ref,
+        /*.node_n     =*/ -1,
+        /*.q1_act_cache      =*/ &tp->q1_act_cache,
+        /*.q1_act_cache_data =*/ tp->q1_act_cache_data,
+        /*.q1_act_cache_size =*/ tp->q1_act_cache_size,
     };
 
 #ifdef GGML_USE_OPENMP
@@ -3309,7 +3345,9 @@ static thread_ret_t ggml_graph_compute_thread(void * data) {
 #endif
 
     for (int node_n = 0; node_n < cgraph->n_nodes && atomic_load_explicit(&tp->abort, memory_order_relaxed) != node_n; node_n++) {
+        const int node_n_start = node_n;
         struct ggml_tensor * node = cgraph->nodes[node_n];
+        params.node_n = node_n;
 
         if (ggml_op_is_empty(node->op)) {
             // skip NOPs
@@ -3327,6 +3365,15 @@ static thread_ret_t ggml_graph_compute_thread(void * data) {
             node_n += n_fused;
         } else {
             ggml_compute_forward(&params, node);
+        }
+
+        if (state->ith == 0 && node_n + 1 < cgraph->n_nodes) {
+            for (int i = node_n_start; i <= node_n; ++i) {
+                if (ggml_q1_act_cache_overlaps_node(&tp->q1_act_cache, cgraph->nodes[i])) {
+                    tp->q1_act_cache.valid = false;
+                    break;
+                }
+            }
         }
 
         if (state->ith == 0 && cplan->abort_callback &&
@@ -3515,6 +3562,10 @@ static struct ggml_threadpool * ggml_threadpool_new_impl(
         threadpool->poll             = tpp->poll;
         threadpool->prio             = tpp->prio;
         threadpool->ec               = GGML_STATUS_SUCCESS;
+        memset(&threadpool->q1_act_cache, 0, sizeof(threadpool->q1_act_cache));
+        threadpool->q1_act_cache_data = NULL;
+        threadpool->q1_act_cache_size = 0;
+        threadpool->q1_act_cache_capacity = 0;
     }
 
     // Allocate and init workers state
@@ -3597,6 +3648,33 @@ enum ggml_status ggml_graph_compute(struct ggml_cgraph * cgraph, struct ggml_cpl
         threadpool->abort            = -1;
         threadpool->ec               = GGML_STATUS_SUCCESS;
     }
+    memset(&threadpool->q1_act_cache, 0, sizeof(threadpool->q1_act_cache));
+
+    size_t max_q1_act_cache_size = 0;
+    bool have_q1_act_cache_candidate = false;
+    for (int i = 0; i < cgraph->n_nodes; ++i) {
+        size_t current_size = 0;
+        const bool have_current = ggml_q1_act_cache_candidate_size(cgraph->nodes[i], &current_size);
+        if (have_current) {
+            max_q1_act_cache_size = MAX(max_q1_act_cache_size, current_size);
+            have_q1_act_cache_candidate = true;
+        }
+    }
+    const size_t q1_act_cache_size = have_q1_act_cache_candidate ? max_q1_act_cache_size : 0;
+    threadpool->q1_act_cache_size = 0;
+    if (q1_act_cache_size > threadpool->q1_act_cache_capacity) {
+        void * data = malloc(q1_act_cache_size);
+        if (data == NULL) {
+            if (disposable_threadpool) {
+                ggml_threadpool_free(threadpool);
+            }
+            return GGML_STATUS_ALLOC_FAILED;
+        }
+        free(threadpool->q1_act_cache_data);
+        threadpool->q1_act_cache_data = data;
+        threadpool->q1_act_cache_capacity = q1_act_cache_size;
+    }
+    threadpool->q1_act_cache_size = q1_act_cache_size;
 
 #ifdef GGML_USE_OPENMP
     if (n_threads > 1) {
@@ -3639,6 +3717,15 @@ enum ggml_status ggml_graph_compute(struct ggml_cgraph * cgraph, struct ggml_cpl
     clear_numa_thread_affinity();
 
     enum ggml_status ret = threadpool->ec;
+
+    if (q1_act_cache_size > 0) {
+        struct ggml_cpu_q1_act_cache * cache = &threadpool->q1_act_cache;
+        if (ggml_cpu_q1_act_cache_debug_enabled()) {
+            GGML_LOG_INFO("Q1 activation cache: hits=%" PRIu64 " misses=%" PRIu64 "\n",
+                          cache->hits, cache->misses);
+        }
+        cache->valid = false;
+    }
 
     if (disposable_threadpool) {
         ggml_threadpool_free(threadpool);

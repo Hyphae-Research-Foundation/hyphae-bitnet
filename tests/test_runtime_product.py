@@ -161,6 +161,24 @@ class RuntimeProductTests(unittest.TestCase):
             ).stdout.strip()
         self.assertEqual(consumer, VERSION)
 
+        library_dir = next(
+            path for path in (
+                prefix / "lib" / "celiums-bitnet-runtime",
+                prefix / "lib64" / "celiums-bitnet-runtime",
+            ) if path.is_dir()
+        )
+        library = library_dir / "libceliums-bitnet-runtime.so"
+        self.assertTrue(library.exists(), f"installed runtime library is unavailable: {library}")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            old_client = Path(temp_dir) / "old-client"
+            subprocess.run([
+                os.environ.get("CC", "cc"), "-std=c11",
+                f"-I{ROOT / 'tests' / 'abi' / 'v0.3.0' / 'include'}",
+                str(ROOT / "tests" / "abi" / "v0.3.0" / "old-client.c"),
+                str(library), f"-Wl,-rpath,{library_dir}", "-o", str(old_client),
+            ], cwd="/tmp", check=True, capture_output=True, text=True)
+            subprocess.run([str(old_client)], cwd=temp_dir, check=True)
+
         licenses = prefix / "share" / "celiums-bitnet-runtime"
         required = {
             "LICENSE", "LICENSE-MIT", "LICENSE-LLAMA-MIT", "LICENSE-BSD-3-Clause",

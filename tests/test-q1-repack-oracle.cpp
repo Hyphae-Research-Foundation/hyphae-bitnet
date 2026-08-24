@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -68,17 +69,16 @@ static int check3(const char * what, int idx, float packed_v, float layout_v, fl
     return 0;
 }
 
-static int test_gemv(int n) {
+static int test_gemv(int n, int nc) {
     const int nb = n / QK1_0;
-    const int nc = 4;
     std::vector<block_q1_0> packed((size_t) nc * (size_t) nb);
     std::vector<block_q8_0> act((size_t) (n / QK8_0));
     for (int row = 0; row < nc; ++row) {
         for (int l = 0; l < nb; ++l) {
             block_q1_0 & blk = packed[row * nb + l];
             /* IEEE fp16 0.5, 0.5625, ... so VNNI F16C and ggml_fp16_to_fp32 agree. */
-            const uint16_t d0_bits[4] = { 0x3800, 0x3880, 0x3900, 0x3980 };
-            blk.d = d0_bits[row % 4];
+            const uint16_t d0_bits[8] = { 0x3800, 0x3880, 0x3900, 0x3980, 0x3A00, 0x3A40, 0x3A80, 0x3AC0 };
+            blk.d = d0_bits[(row + 2 * l) % 8];
             for (int b = 0; b < QK1_0 / 8; ++b) {
                 blk.qs[b] = (uint8_t) (0xA5 ^ (row * 17 + l * 13 + b));
             }
@@ -92,7 +92,7 @@ static int test_gemv(int n) {
         }
     }
 
-    float packed_out[4] = { 0, 0, 0, 0 };
+    std::vector<float> packed_out((size_t) nc, 0.0f);
     float mag = 0.0f;
     for (int row = 0; row < nc; ++row) {
         packed_out[row] = celiums_exact_q1_dot(
@@ -100,28 +100,31 @@ static int test_gemv(int n) {
         mag += std::fabs(packed_out[row]);
     }
     if (mag < 1e-6f) {
-        fprintf(stderr, "q1 oracle gemv packed reference is degenerate d0=%g lib=%g %g %g %g\n",
-                (double) ggml_fp16_to_fp32(packed[0].d),
-                (double) packed_out[0], (double) packed_out[1],
-                (double) packed_out[2], (double) packed_out[3]);
+        fprintf(stderr, "q1 oracle gemv packed reference is degenerate n=%d nc=%d\n", n, nc);
         return 1;
     }
 
-    std::vector<block_q1_0x4> interleaved((size_t) nb);
-    float layout_out[4] = { 0, 0, 0, 0 };
-    float generic_out[4] = { 0, 0, 0, 0 };
-    interleave_q1_4x8(packed.data(), nb, interleaved.data());
-    ggml_gemv_q1_0_4x8_q8_0(n, layout_out, 0, interleaved.data(), act.data(), 1, nc);
-    ggml_gemv_q1_0_4x8_q8_0_generic(n, generic_out, 0, interleaved.data(), act.data(), 1, nc);
+    std::vector<block_q1_0x4> interleaved((size_t) (nc / 4) * (size_t) nb);
+    std::vector<float> layout_out((size_t) nc, 0.0f);
+    std::vector<float> generic_out((size_t) nc, 0.0f);
+    for (int panel = 0; panel < nc / 4; ++panel) {
+        interleave_q1_4x8(packed.data() + (size_t) panel * 4 * (size_t) nb, nb,
+                          interleaved.data() + (size_t) panel * (size_t) nb);
+    }
+    ggml_gemv_q1_0_4x8_q8_0(n, layout_out.data(), 0, interleaved.data(), act.data(), 1, nc);
+    ggml_gemv_q1_0_4x8_q8_0_generic(n, generic_out.data(), 0, interleaved.data(), act.data(), 1, nc);
     for (int row = 0; row < nc; ++row) {
         if (check3("gemv-4x8", row, packed_out[row], layout_out[row], generic_out[row])) {
             return 1;
         }
     }
 
-    interleave_q1_4x4(packed.data(), nb, interleaved.data());
-    memset(layout_out, 0, sizeof(layout_out));
-    ggml_gemv_q1_0_4x4_q8_0(n, layout_out, 0, interleaved.data(), act.data(), 1, nc);
+    for (int panel = 0; panel < nc / 4; ++panel) {
+        interleave_q1_4x4(packed.data() + (size_t) panel * 4 * (size_t) nb, nb,
+                          interleaved.data() + (size_t) panel * (size_t) nb);
+    }
+    std::fill(layout_out.begin(), layout_out.end(), 0.0f);
+    ggml_gemv_q1_0_4x4_q8_0(n, layout_out.data(), 0, interleaved.data(), act.data(), 1, nc);
     for (int row = 0; row < nc; ++row) {
         if (check3("gemv-4x4", row, packed_out[row], layout_out[row], layout_out[row])) {
             return 1;
@@ -222,8 +225,13 @@ int main(void) {
     printf("celiums_exact_q1_gemm_act_tile_rows(128)=%d shipped 8-row GEMM weight reuse\n",
            celiums_exact_q1_gemm_act_tile_rows(128));
     printf("celiums_exact_q1_corr_int / pack_4x8 / q1_dot / i2s_recover linked\n");
-    if (test_gemv(QK1_0) != 0) return 1;
-    if (test_gemv(2 * QK1_0) != 0) return 1;
+    const char * q1_sve2 = std::getenv("GGML_Q1_SVE2");
+    printf("GGML_Q1_SVE2=%s\n", q1_sve2 != nullptr ? q1_sve2 : "0 (default)");
+    for (int n : { QK1_0, 2 * QK1_0 }) {
+        for (int nc : { 4, 8, 12 }) {
+            if (test_gemv(n, nc) != 0) return 1;
+        }
+    }
     if (test_gemm(QK1_0, 4) != 0) return 1;
     if (test_gemm(2 * QK1_0, 4) != 0) return 1;
     if (test_gemm(QK1_0, 8) != 0) return 1;

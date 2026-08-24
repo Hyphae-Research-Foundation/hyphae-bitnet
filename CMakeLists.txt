@@ -305,7 +305,7 @@ configure_package_config_file(
 write_basic_package_version_file(
     ${CMAKE_CURRENT_BINARY_DIR}/CeliumsBitNetRuntimeConfigVersion.cmake
     VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion)
+    COMPATIBILITY ExactVersion)
 install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/CeliumsBitNetRuntimeConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/CeliumsBitNetRuntimeConfigVersion.cmake
@@ -337,16 +337,32 @@ install(FILES 3rdparty/llama.cpp/licenses/LICENSE-jsonhpp
 endif()
 
 if (BUILD_TESTING)
+    if (NOT CELIUMS_BITNET_TEST_MODEL)
+        set(CELIUMS_BITNET_TEST_MODEL ${PROJECT_SOURCE_DIR}/models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf)
+    endif()
     add_executable(test-celiums-runtime-api tests/test-runtime-api.c)
     target_compile_definitions(test-celiums-runtime-api PRIVATE
         CELIUMS_BITNET_TEST_VERSION="${PROJECT_VERSION}")
     target_link_libraries(test-celiums-runtime-api PRIVATE celiums-bitnet-runtime)
     add_test(NAME test-celiums-runtime-api COMMAND test-celiums-runtime-api)
+    if (BUILD_SHARED_LIBS AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+        add_executable(test-celiums-runtime-v0.3.0-client tests/abi/v0.3.0/old-client.c)
+        target_include_directories(test-celiums-runtime-v0.3.0-client PRIVATE
+            ${PROJECT_SOURCE_DIR}/tests/abi/v0.3.0/include)
+        target_link_libraries(test-celiums-runtime-v0.3.0-client PRIVATE
+            $<TARGET_FILE:celiums-bitnet-runtime>)
+        add_dependencies(test-celiums-runtime-v0.3.0-client celiums-bitnet-runtime)
+        set_target_properties(test-celiums-runtime-v0.3.0-client PROPERTIES
+            BUILD_RPATH "$<TARGET_FILE_DIR:celiums-bitnet-runtime>")
+        add_test(NAME test-celiums-runtime-v0.3.0-client
+            COMMAND test-celiums-runtime-v0.3.0-client)
+        if (EXISTS ${CELIUMS_BITNET_TEST_MODEL})
+            add_test(NAME test-celiums-runtime-v0.3.0-model
+                COMMAND test-celiums-runtime-v0.3.0-client ${CELIUMS_BITNET_TEST_MODEL})
+        endif()
+    endif()
     add_executable(test-celiums-runtime-session tests/test-runtime-session.cpp)
     target_link_libraries(test-celiums-runtime-session PRIVATE celiums-bitnet-runtime)
-    if (NOT CELIUMS_BITNET_TEST_MODEL)
-        set(CELIUMS_BITNET_TEST_MODEL ${PROJECT_SOURCE_DIR}/models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf)
-    endif()
     if (EXISTS ${CELIUMS_BITNET_TEST_MODEL})
         add_test(NAME test-celiums-runtime-session COMMAND test-celiums-runtime-session
             ${CELIUMS_BITNET_TEST_MODEL} bitnet)
@@ -362,4 +378,10 @@ if (BUILD_TESTING)
         ${PROJECT_SOURCE_DIR}/3rdparty/llama.cpp/ggml/src/ggml-cpu)
     target_link_libraries(test-q1-repack-oracle PRIVATE ggml-cpu ggml-base celiums-exact)
     add_test(NAME test-q1-repack-oracle COMMAND test-q1-repack-oracle)
+    add_executable(test-q1-act-cache 3rdparty/llama.cpp/tests/test-q1-act-cache.cpp)
+    target_include_directories(test-q1-act-cache PRIVATE
+        ${PROJECT_SOURCE_DIR}/3rdparty/llama.cpp/ggml/include
+        ${PROJECT_SOURCE_DIR}/3rdparty/llama.cpp/ggml/src)
+    target_link_libraries(test-q1-act-cache PRIVATE ggml-cpu ggml-base)
+    add_test(NAME test-q1-act-cache COMMAND test-q1-act-cache)
 endif()

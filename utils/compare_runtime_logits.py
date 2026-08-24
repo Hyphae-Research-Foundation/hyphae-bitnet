@@ -18,21 +18,26 @@ STATUS_OK = 0
 STATUS_BUFFER_TOO_SMALL = 3
 
 
-class RuntimeOptions(ctypes.Structure):
-    _fields_ = [("struct_size", ctypes.c_size_t), ("api_version", ctypes.c_uint32)]
+class RuntimeOptionsEx(ctypes.Structure):
+    _fields_ = [
+        ("struct_size", ctypes.c_size_t),
+        ("api_version", ctypes.c_uint32),
+        ("ram_budget_bytes", ctypes.c_uint64),
+    ]
 
 
-class ModelOptions(ctypes.Structure):
+class ModelOptionsEx(ctypes.Structure):
     _fields_ = [
         ("struct_size", ctypes.c_size_t),
         ("api_version", ctypes.c_uint32),
         ("use_mmap", ctypes.c_bool),
         ("use_mlock", ctypes.c_bool),
         ("check_tensors", ctypes.c_bool),
+        ("use_compute_layout", ctypes.c_bool),
     ]
 
 
-class SessionOptions(ctypes.Structure):
+class SessionOptionsEx(ctypes.Structure):
     _fields_ = [
         ("struct_size", ctypes.c_size_t),
         ("api_version", ctypes.c_uint32),
@@ -41,6 +46,9 @@ class SessionOptions(ctypes.Structure):
         ("ubatch_size", ctypes.c_uint32),
         ("threads", ctypes.c_int32),
         ("threads_batch", ctypes.c_int32),
+        ("n_seq", ctypes.c_uint32),
+        ("ram_budget_bytes", ctypes.c_uint64),
+        ("use_compute_layout", ctypes.c_bool),
     ]
 
 
@@ -67,17 +75,24 @@ def final_reference_row(tokens, positions, logits):
 def configure_library(path):
     library = ctypes.CDLL(str(path))
     handle = ctypes.c_void_p
-    library.celiums_bitnet_runtime_default_options.restype = RuntimeOptions
-    library.celiums_bitnet_model_default_options.restype = ModelOptions
-    library.celiums_bitnet_session_default_options.restype = SessionOptions
-    library.celiums_bitnet_runtime_create.argtypes = [ctypes.POINTER(RuntimeOptions), ctypes.POINTER(handle)]
-    library.celiums_bitnet_runtime_create.restype = ctypes.c_int
+    library.celiums_bitnet_runtime_options_ex_init.argtypes = [ctypes.POINTER(RuntimeOptionsEx), ctypes.c_size_t]
+    library.celiums_bitnet_runtime_options_ex_init.restype = ctypes.c_int
+    library.celiums_bitnet_model_options_ex_init.argtypes = [ctypes.POINTER(ModelOptionsEx), ctypes.c_size_t]
+    library.celiums_bitnet_model_options_ex_init.restype = ctypes.c_int
+    library.celiums_bitnet_session_options_ex_init.argtypes = [ctypes.POINTER(SessionOptionsEx), ctypes.c_size_t]
+    library.celiums_bitnet_session_options_ex_init.restype = ctypes.c_int
+    library.celiums_bitnet_runtime_create_ex.argtypes = [ctypes.POINTER(RuntimeOptionsEx), ctypes.POINTER(handle)]
+    library.celiums_bitnet_runtime_create_ex.restype = ctypes.c_int
     library.celiums_bitnet_runtime_destroy.argtypes = [handle]
-    library.celiums_bitnet_model_load.argtypes = [handle, ctypes.c_char_p, ctypes.POINTER(ModelOptions), ctypes.POINTER(handle)]
-    library.celiums_bitnet_model_load.restype = ctypes.c_int
+    library.celiums_bitnet_model_load_ex.argtypes = [
+        handle, ctypes.c_char_p, ctypes.POINTER(ModelOptionsEx), ctypes.POINTER(handle),
+    ]
+    library.celiums_bitnet_model_load_ex.restype = ctypes.c_int
     library.celiums_bitnet_model_destroy.argtypes = [handle]
-    library.celiums_bitnet_session_create.argtypes = [handle, ctypes.POINTER(SessionOptions), ctypes.POINTER(handle)]
-    library.celiums_bitnet_session_create.restype = ctypes.c_int
+    library.celiums_bitnet_session_create_ex.argtypes = [
+        handle, ctypes.POINTER(SessionOptionsEx), ctypes.POINTER(handle),
+    ]
+    library.celiums_bitnet_session_create_ex.restype = ctypes.c_int
     library.celiums_bitnet_session_destroy.argtypes = [handle]
     library.celiums_bitnet_tokenize.argtypes = [
         handle, ctypes.c_char_p, ctypes.c_bool, ctypes.c_bool,
@@ -129,22 +144,43 @@ def compare_runtime(library_path, model_path, reference_path, reference_sidecar=
     model = ctypes.c_void_p()
     session = ctypes.c_void_p()
     try:
-        runtime_options = library.celiums_bitnet_runtime_default_options()
+        runtime_options = RuntimeOptionsEx()
         require_status(
             library,
-            library.celiums_bitnet_runtime_create(ctypes.byref(runtime_options), ctypes.byref(runtime)),
+            library.celiums_bitnet_runtime_options_ex_init(
+                ctypes.byref(runtime_options), ctypes.sizeof(runtime_options)),
+            STATUS_OK,
+            "runtime options initialization",
+        )
+        require_status(
+            library,
+            library.celiums_bitnet_runtime_create_ex(ctypes.byref(runtime_options), ctypes.byref(runtime)),
             STATUS_OK,
             "runtime creation",
         )
-        model_options = library.celiums_bitnet_model_default_options()
+        model_options = ModelOptionsEx()
         require_status(
             library,
-            library.celiums_bitnet_model_load(
+            library.celiums_bitnet_model_options_ex_init(
+                ctypes.byref(model_options), ctypes.sizeof(model_options)),
+            STATUS_OK,
+            "model options initialization",
+        )
+        require_status(
+            library,
+            library.celiums_bitnet_model_load_ex(
                 runtime, str(model_path).encode(), ctypes.byref(model_options), ctypes.byref(model)),
             STATUS_OK,
             "model load",
         )
-        session_options = library.celiums_bitnet_session_default_options()
+        session_options = SessionOptionsEx()
+        require_status(
+            library,
+            library.celiums_bitnet_session_options_ex_init(
+                ctypes.byref(session_options), ctypes.sizeof(session_options)),
+            STATUS_OK,
+            "session options initialization",
+        )
         session_options.context_size = metadata["celiums.logits_capture.n_ctx"]
         session_options.batch_size = metadata["celiums.logits_capture.n_batch"]
         session_options.ubatch_size = metadata["celiums.logits_capture.n_ubatch"]
@@ -152,7 +188,8 @@ def compare_runtime(library_path, model_path, reference_path, reference_sidecar=
         session_options.threads_batch = metadata["celiums.logits_capture.n_threads_batch"]
         require_status(
             library,
-            library.celiums_bitnet_session_create(model, ctypes.byref(session_options), ctypes.byref(session)),
+            library.celiums_bitnet_session_create_ex(
+                model, ctypes.byref(session_options), ctypes.byref(session)),
             STATUS_OK,
             "session creation",
         )

@@ -26,9 +26,17 @@ int main(int argc, char ** argv) {
     celiums_bitnet_model * model = nullptr;
     celiums_bitnet_session * session = nullptr;
     celiums_bitnet_request * request = nullptr;
-    auto runtime_options = celiums_bitnet_runtime_default_options();
-    auto model_options = celiums_bitnet_model_default_options();
-    auto session_options = celiums_bitnet_session_default_options();
+    celiums_bitnet_runtime_options_ex runtime_options;
+    celiums_bitnet_model_options_ex model_options;
+    celiums_bitnet_session_options_ex session_options;
+    if (celiums_bitnet_runtime_options_ex_init(&runtime_options, sizeof(runtime_options)) !=
+                CELIUMS_BITNET_STATUS_OK ||
+            celiums_bitnet_model_options_ex_init(&model_options, sizeof(model_options)) !=
+                CELIUMS_BITNET_STATUS_OK ||
+            celiums_bitnet_session_options_ex_init(&session_options, sizeof(session_options)) !=
+                CELIUMS_BITNET_STATUS_OK) {
+        return 1;
+    }
     session_options.context_size = 128;
     session_options.batch_size = 64;
     session_options.ubatch_size = 64;
@@ -36,15 +44,15 @@ int main(int argc, char ** argv) {
     session_options.threads_batch = 1;
 
     {
-        auto tight_runtime_options = celiums_bitnet_runtime_default_options();
+        auto tight_runtime_options = runtime_options;
         tight_runtime_options.ram_budget_bytes = 64;
         celiums_bitnet_runtime * tight_runtime = nullptr;
         celiums_bitnet_model * denied_model = nullptr;
-        auto tight_model_options = celiums_bitnet_model_default_options();
+        auto tight_model_options = model_options;
         tight_model_options.use_compute_layout = true;
-        if (celiums_bitnet_runtime_create(&tight_runtime_options, &tight_runtime) !=
+        if (celiums_bitnet_runtime_create_ex(&tight_runtime_options, &tight_runtime) !=
                 CELIUMS_BITNET_STATUS_OK ||
-                celiums_bitnet_model_load_family(
+                celiums_bitnet_model_load_family_ex(
                     tight_runtime, argv[1], family, &tight_model_options, &denied_model) !=
                 CELIUMS_BITNET_STATUS_RAM_BUDGET_EXCEEDED ||
                 denied_model != nullptr) {
@@ -54,18 +62,36 @@ int main(int argc, char ** argv) {
         celiums_bitnet_runtime_destroy(tight_runtime);
     }
 
-    auto status = celiums_bitnet_runtime_create(&runtime_options, &runtime);
+    auto status = celiums_bitnet_runtime_create_ex(&runtime_options, &runtime);
     if (status == CELIUMS_BITNET_STATUS_OK) {
-        status = celiums_bitnet_model_load_family(runtime, argv[1], family, &model_options, &model);
+        status = celiums_bitnet_model_load_family_ex(runtime, argv[1], family, &model_options, &model);
     }
-    if (status == CELIUMS_BITNET_STATUS_OK) status = celiums_bitnet_session_create(model, &session_options, &session);
+    if (status == CELIUMS_BITNET_STATUS_OK) {
+        status = celiums_bitnet_session_create_ex(model, &session_options, &session);
+    }
     if (status != CELIUMS_BITNET_STATUS_OK || celiums_bitnet_model_get_family(model) != family) return 1;
+
+    {
+        celiums_bitnet_session_options legacy = celiums_bitnet_session_default_options();
+        legacy.context_size = 128;
+        legacy.batch_size = 64;
+        legacy.ubatch_size = 64;
+        legacy.threads = 1;
+        legacy.threads_batch = 1;
+        celiums_bitnet_session * legacy_session = nullptr;
+        if (celiums_bitnet_session_create(model, &legacy, &legacy_session) !=
+                CELIUMS_BITNET_STATUS_OK || legacy_session == nullptr) {
+            fprintf(stderr, "legacy session create failed\n");
+            return 1;
+        }
+        celiums_bitnet_session_destroy(legacy_session);
+    }
 
     {
         auto multi = session_options;
         multi.n_seq = 2;
         celiums_bitnet_session * multi_denied = nullptr;
-        if (celiums_bitnet_session_create(model, &multi, &multi_denied) !=
+        if (celiums_bitnet_session_create_ex(model, &multi, &multi_denied) !=
                 CELIUMS_BITNET_STATUS_INVALID_ARGUMENT || multi_denied != nullptr) {
             fprintf(stderr, "n_seq>1 must fail closed\n");
             return 1;
@@ -77,7 +103,7 @@ int main(int argc, char ** argv) {
         tight.context_size = 2048;
         tight.use_compute_layout = true;
         celiums_bitnet_session * denied = nullptr;
-        if (celiums_bitnet_session_create(model, &tight, &denied) !=
+        if (celiums_bitnet_session_create_ex(model, &tight, &denied) !=
                 CELIUMS_BITNET_STATUS_RAM_BUDGET_EXCEEDED || denied != nullptr) {
             fprintf(stderr, "RAM budget fail-closed test failed\n");
             return 1;
@@ -90,7 +116,7 @@ int main(int argc, char ** argv) {
         kv.n_seq = 1;
         kv.use_compute_layout = false;
         kv.ram_budget_bytes = 8ull * 1024ull * 1024ull;
-        const uint64_t needed = celiums_bitnet_estimate_session_ram_bytes_for_model(model, &kv);
+        const uint64_t needed = celiums_bitnet_estimate_session_ram_bytes_for_model_ex(model, &kv);
         const uint64_t naive = (uint64_t) kv.context_size * 16384ull + 65536ull;
         if (needed <= kv.ram_budget_bytes || needed <= naive) {
             fprintf(stderr, "session KV estimate undercounts needed=%llu budget=%llu naive=%llu\n",
@@ -100,7 +126,7 @@ int main(int argc, char ** argv) {
             return 1;
         }
         celiums_bitnet_session * denied = nullptr;
-        if (celiums_bitnet_session_create(model, &kv, &denied) !=
+        if (celiums_bitnet_session_create_ex(model, &kv, &denied) !=
                 CELIUMS_BITNET_STATUS_RAM_BUDGET_EXCEEDED || denied != nullptr) {
             fprintf(stderr, "RAM budget fail-closed on real KV failed needed=%llu\n",
                     (unsigned long long) needed);

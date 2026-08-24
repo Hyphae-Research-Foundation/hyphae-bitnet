@@ -69,10 +69,11 @@ for profile in native avx2 scalar; do
   "$cmake" --build "$build" --parallel "$jobs" --target \
     celiums-bitnet celiums-runtime-bench celiums-runtime-server \
     celiums-runtime-gateway-binaries \
-    celiums-logits-capture test-celiums-runtime-api test-celiums-runtime-session \
+    celiums-logits-capture test-celiums-runtime-api test-celiums-runtime-v0.3.0-client \
+    test-celiums-runtime-session \
     test-quantize-fns test-i2s-mul-mat test-celiums-hybrid
   "${CTEST:-${cmake%/cmake}/ctest}" --test-dir "$build" --output-on-failure --no-tests=error \
-    -R 'test-(celiums-runtime-api|celiums-runtime-session|quantize-fns|i2s-mul-mat|celiums-hybrid)$'
+    -R 'test-(celiums-runtime-api|celiums-runtime-v0.3.0-client|celiums-runtime-v0.3.0-model|celiums-runtime-session|quantize-fns|i2s-mul-mat|celiums-hybrid)$'
   "$cmake" --install "$build"
   CELIUMS_BITNET_TEST_BUILD_DIR="$build" \
   CELIUMS_BITNET_TEST_INSTALL_PREFIX="$install" \

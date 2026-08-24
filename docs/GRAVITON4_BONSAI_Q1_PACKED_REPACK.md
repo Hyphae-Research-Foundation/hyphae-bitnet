@@ -53,9 +53,32 @@ The fused Gated DeltaNet operator is material but not dominant:
 | tg64 | 1 | 64.71 s | 1.72 s | 2.65% |
 | tg64 | 96 | 2.99 s | 0.097 s | 3.23% |
 
-The next optimization target is the packed Q1 GEMV loop and thread scheduling,
-not Gated DeltaNet. An SVE2 packed kernel is still unimplemented; SVE PMU
-events observed in the whole model come from other ggml kernels.
+The packed Q1 decode path includes an experimental SVE2 GEMV kernel for VL=128
+targets. It pairs two adjacent four-row panels so one Q8 activation load feeds
+eight outputs. Graviton4 whole-model A/B measurements found NEON DOTPROD faster,
+so NEON remains the default and `GGML_Q1_SVE2=1` opts into SVE2. Single-row Q1
+decode also uses a static,
+contiguous panel split after activation quantization instead of work stealing.
+Consecutive eligible Q1 `MUL_MAT` projections now also share the packed Q8
+activation when their F32 source tensor and packing layout match exactly;
+unrelated graph nodes may occur between them. Eligibility is limited to F32
+projection sources that remain immutable during the eligible sequence. A
+different eligible source or layout replaces the one-entry cache, and a node
+whose output overlaps the source storage invalidates it conservatively. The
+execution-owned allocation is sized for the largest eligible candidate so
+one-entry replacement remains available even when the planner cannot predict a
+future reuse pair. Overlap invalidation is performed by thread zero after
+computation and published by the existing end-of-node barrier. This
+targets the Q/K/V, recurrent QKV/Z/alpha/beta, and FFN up/gate groups without
+retaining data across graph executions or scheduler splits.
+`GGML_Q1_ACT_CACHE=0` disables this reuse; `GGML_Q1_ACT_CACHE_DEBUG=1` prints
+per-execution hit/miss counts.
+
+The 2026-08-24 A/B run confirmed exact SVE2 and NEON oracle results. At 72
+threads, SVE2 reached 20.50 tg128 versus 21.99 for NEON with the activation
+cache enabled; at 96 threads it reached 20.63 versus 21.51. Q8 activation reuse
+was neutral at full-model scale, with changes below normal single-run noise.
+Raw summary: `benchmark-results-2026-08-24-r8g-sve2-cache.json`.
 
 The raw archive SHA256 is
 `4a7dfe9b82463862f18f424667cbc47aeff3129bfaa7df5bc079a50289dd9116`.

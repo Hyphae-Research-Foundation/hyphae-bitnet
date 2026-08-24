@@ -27,6 +27,29 @@ struct ggml_compute_params {
 
     // use reference implementation
     bool use_ref;
+
+    // current graph node and execution-owned Q1 activation cache
+    int node_n;
+    struct ggml_cpu_q1_act_cache * q1_act_cache;
+    void *                          q1_act_cache_data;
+    size_t                          q1_act_cache_size;
+};
+
+struct ggml_cpu_q1_act_cache {
+    bool valid;
+    int  node_n;
+
+    const struct ggml_tensor * src1;
+    const void *               src1_data;
+    enum ggml_type             src1_type;
+    int64_t                    ne[GGML_MAX_DIMS];
+    size_t                     nb[GGML_MAX_DIMS];
+
+    const void * packing;
+    size_t       packed_size;
+
+    uint64_t hits;
+    uint64_t misses;
 };
 
 

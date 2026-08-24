@@ -14,6 +14,7 @@ set_target_properties(celiums-bitnet-runtime PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}
     C_VISIBILITY_PRESET hidden
+    CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN ON
     PUBLIC_HEADER ${PROJECT_SOURCE_DIR}/include/celiums/bitnet_runtime.h
     BUILD_RPATH "$ORIGIN")

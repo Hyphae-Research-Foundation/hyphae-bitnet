@@ -41,10 +41,11 @@ jobs:
       - run: >-
           cmake --build build-${{ matrix.profile }} --parallel 2 --target
           celiums-bitnet celiums-runtime-bench celiums-runtime-server
-          test-celiums-runtime-api test-quantize-fns test-i2s-mul-mat test-celiums-hybrid
+          test-celiums-runtime-api test-celiums-runtime-v0.3.0-client
+          test-quantize-fns test-i2s-mul-mat test-celiums-hybrid
       - run: >-
           ctest --test-dir build-${{ matrix.profile }} --output-on-failure --no-tests=error
-          -R 'test-(celiums-runtime-api|quantize-fns|i2s-mul-mat|celiums-hybrid)$'
+          -R 'test-(celiums-runtime-api|celiums-runtime-v0.3.0-client|quantize-fns|i2s-mul-mat|celiums-hybrid)$'
       - run: cmake --install build-${{ matrix.profile }}
       - run: >-
           CELIUMS_BITNET_TEST_BUILD_DIR=${{ github.workspace }}/build-${{ matrix.profile }}
@@ -58,6 +59,48 @@ jobs:
           for option in GGML_SSE42 GGML_AVX GGML_AVX2 GGML_FMA GGML_F16C; do
             grep -qx "${option}:BOOL=ON" build-avx2/CMakeCache.txt
           done
+
+  arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - run: >-
+          cmake -S . -B build-arm64
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_SHARED_LIBS=ON
+          -DLLAMA_BUILD_TESTS=OFF
+          -DLLAMA_BUILD_EXAMPLES=OFF
+          -DLLAMA_BUILD_UI=OFF
+          -DLLAMA_USE_PREBUILT_UI=OFF
+          -DCELIUMS_BITNET_BUILD_SERVER=OFF
+          -DCELIUMS_BITNET_CPU_PROFILE=native
+          -DCELIUMS_BITNET_INSTALL_COMPAT=OFF
+          -DCELIUMS_BITNET_VERIFY_ENGINE_TREE=ON
+      - run: >-
+          cmake --build build-arm64 --parallel 2 --target
+          test-q1-repack-oracle test-q1-act-cache
+          test-celiums-runtime-api test-celiums-runtime-v0.3.0-client
+      - run: >-
+          GGML_Q1_SVE2=1 ctest --test-dir build-arm64 --output-on-failure --no-tests=error
+          -R 'test-(q1-repack-oracle|q1-act-cache|celiums-runtime-api|celiums-runtime-v0.3.0-client)$'
+      - run: >-
+          cmake -S . -B build-armv8.6
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_SHARED_LIBS=ON
+          -DBUILD_TESTING=ON
+          -DLLAMA_BUILD_TESTS=OFF
+          -DLLAMA_BUILD_EXAMPLES=OFF
+          -DLLAMA_BUILD_UI=OFF
+          -DLLAMA_USE_PREBUILT_UI=OFF
+          -DCELIUMS_BITNET_BUILD_SERVER=OFF
+          -DCELIUMS_BITNET_CPU_PROFILE=scalar
+          -DCELIUMS_BITNET_INSTALL_COMPAT=OFF
+          -DCELIUMS_BITNET_VERIFY_ENGINE_TREE=ON
+          -DGGML_CPU_ARM_ARCH=armv8.6-a+dotprod+i8mm+sve2
+      - run: cmake --build build-armv8.6 --parallel 2 --target test-q1-repack-oracle
+      - run: >-
+          objdump -d build-armv8.6/bin/test-q1-repack-oracle |
+          grep -Eq '\baddp\b'
 
   gateway:
     runs-on: ubuntu-24.04
@@ -138,6 +181,7 @@ jobs:
           CELIUMS_BITNET_TEST_BUILD_DIR=${{ github.workspace }}/build-release-model
           CELIUMS_BITNET_TEST_MODEL=${{ vars.CELIUMS_BITNET_MODEL }}
           python -m unittest tests.test_runtime_product -v
+      - run: build-release-model/bin/test-celiums-runtime-v0.3.0-client "${{ vars.CELIUMS_BITNET_MODEL }}"
       - run: >-
           python utils/compare_runtime_logits.py
           --library build-release-model/src/libceliums-bitnet-runtime.so

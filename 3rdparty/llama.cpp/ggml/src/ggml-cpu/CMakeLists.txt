@@ -182,6 +182,7 @@ function(ggml_add_cpu_backend_variant_impl tag_name)
                 check_arm_feature(dotprod DOTPROD     "#include <arm_neon.h>\nint main() { int8x16_t _a, _b; volatile int32x4_t _s = vdotq_s32(_s, _a, _b); return 0; }")
                 check_arm_feature(i8mm    MATMUL_INT8 "#include <arm_neon.h>\nint main() { int8x16_t _a, _b; volatile int32x4_t _s = vmmlaq_s32(_s, _a, _b); return 0; }")
                 check_arm_feature(sve     SVE         "#include <arm_sve.h>\nint main()  { svfloat32_t _a, _b; volatile svfloat32_t _c = svadd_f32_z(svptrue_b8(), _a, _b); return 0; }")
+                check_arm_feature(sve2    SVE2        "#include <arm_sve.h>\nint main() { svint32_t _a = svdup_n_s32(0); volatile svint32_t _c = svaddp_s32_x(svptrue_b32(), _a, _a); return 0; }")
                 check_arm_feature(sme     SME         "#include <arm_sme.h>\n__arm_locally_streaming int main() { __asm__ volatile(\"smstart; smstop;\"); return 0; }")
 
                 list(APPEND ARCH_FLAGS "${ARM_NATIVE_FLAG}${ARM_NATIVE_FLAG_FIX}")
@@ -243,7 +244,7 @@ function(ggml_add_cpu_backend_variant_impl tag_name)
             set(CMAKE_REQUIRED_FLAGS_SAVE ${CMAKE_REQUIRED_FLAGS})
             string(REPLACE ";" " " ARCH_FLAGS_STR "${ARCH_FLAGS}")
             set(CMAKE_REQUIRED_FLAGS "${ARCH_FLAGS_STR}")
-            foreach(feature DOTPROD SVE MATMUL_INT8 FMA FP16_VECTOR_ARITHMETIC SME)
+            foreach(feature DOTPROD SVE SVE2 MATMUL_INT8 FMA FP16_VECTOR_ARITHMETIC SME)
                 set(ARM_FEATURE "HAVE_${feature}")
                 check_cxx_source_compiles(
                     "

@@ -11,10 +11,13 @@
 
 #include "arch-fallback.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <cassert>
 #include <cstdio>  // for GGML_ASSERT
+#include <cstdlib>
+#include <type_traits>
 
 #include "repack.h"
 #include "celiums-exact.h"
@@ -24,6 +27,16 @@
 #endif
 
 #define UNUSED GGML_UNUSED
+
+static const bool ggml_q1_act_cache_enabled = [] {
+    const char * value = std::getenv("GGML_Q1_ACT_CACHE");
+    return value == nullptr || std::strcmp(value, "0") != 0;
+}();
+
+static const bool ggml_q1_act_cache_debug = [] {
+    const char * value = std::getenv("GGML_Q1_ACT_CACHE_DEBUG");
+    return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
+}();
 
 static inline int nearest_int(float fval) {
     assert(fabsf(fval) <= 4194303.f);
@@ -4625,7 +4638,8 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS, ggml_type PAR
                                    int64_t               src0_start,
                                    int64_t               src0_end,
                                    int64_t               src1_start,
-                                   int64_t               src1_end) {
+                                   int64_t               src1_end,
+                                   const void *          packed_src1 = nullptr) {
         const ggml_tensor * src0 = op->src[0];
         const ggml_tensor * src1 = op->src[1];
         ggml_tensor *       dst  = op;
@@ -4648,13 +4662,17 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS, ggml_type PAR
         const int64_t i2 = i12;
 
         const char * src0_ptr = (const char *) src0->data + i02 * nb02;
-        const char * src1_ptr = (const char *) params->wdata + (i11 + i12 * ne11) * src1_col_stride;
+        const char * src1_base = packed_src1 != nullptr ? (const char *) packed_src1 :
+                                                          (const char *) params->wdata;
+        const char * src1_ptr = src1_base + (i11 + i12 * ne11) * src1_col_stride;
         char *       dst_ptr  = ((char *) dst->data + (i1 * nb1 + i2 * nb2));
 
         const int64_t nrows = src1_end - src1_start;
         const int64_t ncols = src0_end - src0_start;
 
-        GGML_ASSERT(src1_ptr + src1_col_stride * nrows <= (const char *) params->wdata + params->wsize);
+        if (packed_src1 == nullptr) {
+            GGML_ASSERT(src1_ptr + src1_col_stride * nrows <= (const char *) params->wdata + params->wsize);
+        }
 
         // If there are more than three rows in src1, use gemm; otherwise, use gemv.
         if (nrows > 3) {
@@ -4701,30 +4719,74 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS, ggml_type PAR
         GGML_ASSERT(ggml_n_dims(op->src[0]) == 2);
         // GGML_ASSERT(ggml_n_dims(op->src[1]) == 2);
 
-        char *       wdata = static_cast<char *>(params->wdata);
         const size_t nbw1  = ggml_row_size(PARAM_TYPE, ne10);
         const size_t nbw2  = nbw1 * ne11;
+        const size_t packed_size = nbw2 * ne12;
 
-        assert(params->wsize >= nbw2 * ne12);
+        bool cache_hit = false;
+        bool use_cache = false;
+        if constexpr (std::is_same<BLOC_TYPE, block_q1_0>::value && PARAM_TYPE == GGML_TYPE_Q8_0) {
+            const ggml_cpu_q1_act_cache * cache = params->q1_act_cache;
+            use_cache = cache != nullptr && params->q1_act_cache_data != nullptr &&
+                        params->q1_act_cache_size >= packed_size;
+            if (use_cache) {
+                cache_hit = cache->valid && cache->src1 == src1 && cache->src1_data == src1->data &&
+                            cache->src1_type == src1->type && cache->packing == this &&
+                            cache->packed_size == packed_size;
+                for (int i = 0; cache_hit && i < GGML_MAX_DIMS; ++i) {
+                    cache_hit = cache->ne[i] == src1->ne[i] && cache->nb[i] == src1->nb[i];
+                }
+            }
+        }
+
+        char * wdata = use_cache ? static_cast<char *>(params->q1_act_cache_data) :
+                                   static_cast<char *>(params->wdata);
+
+        assert(use_cache || params->wsize >= packed_size);
 
         const ggml_from_float_t from_float = ggml_get_type_traits_cpu(PARAM_TYPE)->from_float;
 
         // INFO: Quantization is done in planes to avoid extra complexity in chunking.
         // Flattening dimensions not multiple of INTER_SIZE would require extra handling depending on how
         // the planes are broadcast.
-        for (int64_t i12 = 0; i12 < ne12; i12++) {
-            char * data_ptr  = (char *) src1->data + i12 * nb12;
-            char * wdata_ptr = wdata + i12 * nbw2;
+        if (!cache_hit) {
+            for (int64_t i12 = 0; i12 < ne12; i12++) {
+                char * data_ptr  = (char *) src1->data + i12 * nb12;
+                char * wdata_ptr = wdata + i12 * nbw2;
 
-            for (int64_t i11 = ith * 4; i11 < ne11 - ne11 % 4; i11 += nth * 4) {
-                ggml_quantize_mat_t<INTER_SIZE, PARAM_TYPE>((float *) (data_ptr + i11 * nb11),
-                                                            (void *) (wdata_ptr + i11 * nbw1), 4, ne10);
+                for (int64_t i11 = ith * 4; i11 < ne11 - ne11 % 4; i11 += nth * 4) {
+                    ggml_quantize_mat_t<INTER_SIZE, PARAM_TYPE>((float *) (data_ptr + i11 * nb11),
+                                                                (void *) (wdata_ptr + i11 * nbw1), 4, ne10);
+                }
+
+                const int64_t i11_processed = ne11 - ne11 % 4;
+                for (int64_t i11 = i11_processed + ith; i11 < ne11; i11 += nth) {
+                    from_float((float *) (data_ptr + i11 * nb11), (void *) (wdata_ptr + i11 * nbw1), ne10);
+                }
+            }
+        }
+
+        if (std::is_same<BLOC_TYPE, block_q1_0>::value && ne11 * ne12 == 1) {
+            q1_act_cache_barrier(params);
+
+            if (use_cache) {
+                if (ith == 0) {
+                    update_q1_act_cache(params, src1, this, packed_size, cache_hit);
+                }
+                q1_act_cache_barrier(params);
             }
 
-            const int64_t i11_processed = ne11 - ne11 % 4;
-            for (int64_t i11 = i11_processed + ith; i11 < ne11; i11 += nth) {
-                from_float((float *) (data_ptr + i11 * nb11), (void *) (wdata_ptr + i11 * nbw1), ne10);
+            const int64_t npanels = ne01 / NB_COLS;
+            const int64_t panels_per_thread = (npanels + nth - 1) / nth;
+            const int64_t panel_start = std::min(npanels, panels_per_thread * ith);
+            const int64_t panel_end = std::min(npanels, panel_start + panels_per_thread);
+            if (panel_start == panel_end) {
+                return;
             }
+
+            forward_mul_mat_one_chunk(
+                params, dst, panel_start * NB_COLS, panel_end * NB_COLS, 0, 1, wdata);
+            return;
         }
 
         // disable for NUMA
@@ -4770,6 +4832,13 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS, ggml_type PAR
 
         ggml_barrier(params->threadpool);
 
+        if (use_cache && ith == 0) {
+            update_q1_act_cache(params, src1, this, packed_size, cache_hit);
+        }
+        if (use_cache) {
+            q1_act_cache_barrier(params);
+        }
+
         // The first chunk comes from our thread_id, the rest will get auto-assigned.
         int current_chunk = ith;
 
@@ -4796,10 +4865,36 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS, ggml_type PAR
                 continue;
             }
 
-            forward_mul_mat_one_chunk(params, dst, src0_start, src0_end, src1_start, src1_end);
+            forward_mul_mat_one_chunk(params, dst, src0_start, src0_end, src1_start, src1_end, wdata);
 
             current_chunk = ggml_threadpool_chunk_add(params->threadpool, 1);
         }
+    }
+
+    static void update_q1_act_cache(
+            ggml_compute_params * params,
+            const ggml_tensor *   src1,
+            const void *          packing,
+            size_t                packed_size,
+            bool                  cache_hit) {
+        ggml_cpu_q1_act_cache * cache = params->q1_act_cache;
+        cache->valid       = true;
+        cache->node_n      = params->node_n;
+        cache->src1        = src1;
+        cache->src1_data   = src1->data;
+        cache->src1_type   = src1->type;
+        cache->packing     = packing;
+        cache->packed_size = packed_size;
+        for (int i = 0; i < GGML_MAX_DIMS; ++i) {
+            cache->ne[i] = src1->ne[i];
+            cache->nb[i] = src1->nb[i];
+        }
+        cache->hits   += cache_hit ? 1 : 0;
+        cache->misses += cache_hit ? 0 : 1;
+    }
+
+    static void q1_act_cache_barrier(ggml_compute_params * params) {
+        ggml_barrier(params->threadpool);
     }
 
     void forward_mul_mat_id(ggml_compute_params * params, ggml_tensor * op) {
@@ -5145,6 +5240,13 @@ static const ggml::cpu::tensor_traits * ggml_repack_get_optimal_repack_type(cons
         if (!ggml_cpu_get_repack_enabled() || cur->ne[1] % 4 != 0) {
             return nullptr;
         }
+        static const bool generic_test = [] {
+            const char * value = std::getenv("GGML_Q1_REPACK_GENERIC_TEST");
+            return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
+        }();
+        if (generic_test) {
+            return &q1_0_4x8_q8_0;
+        }
         if (ggml_cpu_has_avx512() && ggml_cpu_has_avx512_vnni() && ggml_cpu_has_f16c()) {
             return &q1_0_4x8_q8_0;
         }
@@ -5157,6 +5259,24 @@ static const ggml::cpu::tensor_traits * ggml_repack_get_optimal_repack_type(cons
     }
 
     return nullptr;
+}
+
+extern "C" bool ggml_cpu_q1_act_cache_info(
+        const struct ggml_tensor * op,
+        const void **              packing,
+        size_t *                   packed_size) {
+    if (!ggml_q1_act_cache_enabled || op == nullptr || op->op != GGML_OP_MUL_MAT ||
+        op->src[0] == nullptr || op->src[1] == nullptr || op->src[0]->type != GGML_TYPE_Q1_0 ||
+        op->src[1]->type != GGML_TYPE_F32 || ggml_n_dims(op->src[0]) != 2 ||
+        op->src[0]->buffer == nullptr ||
+        op->src[0]->buffer->buft != ggml_backend_cpu_repack_buffer_type() ||
+        op->src[0]->extra == nullptr) {
+        return false;
+    }
+
+    *packing = op->src[0]->extra;
+    *packed_size = ggml_row_size(GGML_TYPE_Q8_0, ggml_nelements(op->src[1]));
+    return true;
 }
 
 static enum ggml_status ggml_backend_cpu_repack_buffer_init_tensor(ggml_backend_buffer_t buffer, struct ggml_tensor * tensor) {
@@ -5258,6 +5378,10 @@ class extra_buffer_type : ggml::cpu::extra_buffer_type {
     }
 };
 }  // namespace ggml::cpu::repack
+
+extern "C" bool ggml_cpu_q1_act_cache_debug_enabled(void) {
+    return ggml_q1_act_cache_debug;
+}
 
 ggml_backend_buffer_type_t ggml_backend_cpu_repack_buffer_type(void) {
     static struct ggml_backend_buffer_type ggml_backend_cpu_buffer_type_repack = {
