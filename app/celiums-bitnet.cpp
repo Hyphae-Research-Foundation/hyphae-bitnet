@@ -22,7 +22,7 @@ celiums_bitnet_model_family parse_model_family(const char * value) {
 }
 
 void print_help(const char * program) {
-    printf("Celiums BitNet Runtime %s\n\n", celiums_bitnet_version());
+    printf("Hyphae BitNet Runtime %s\n\n", celiums_bitnet_version());
     printf("Usage: %s <command> [options]\n\n", program);
     printf("Commands:\n");
     printf("  run       Run one-shot BitNet inference\n");
@@ -36,7 +36,7 @@ void print_help(const char * program) {
 }
 
 int print_version() {
-    printf("Celiums BitNet Runtime %s\n", celiums_bitnet_version());
+    printf("Hyphae BitNet Runtime %s\n", celiums_bitnet_version());
     printf("product commit: %s\n", celiums_bitnet_product_commit());
     printf("engine commit: %s\n", celiums_bitnet_engine_commit());
     printf("engine tree: %s\n", celiums_bitnet_engine_tree());
@@ -120,7 +120,7 @@ int run_inference(int argc, char ** argv) {
                 return 0;
             }
             if (index + 1 >= argc) {
-                fprintf(stderr, "celiums-bitnet run: argument '%s' requires a value\n", argument.c_str());
+                fprintf(stderr, "hyphae-bitnet run: argument '%s' requires a value\n", argument.c_str());
                 return 2;
             }
             const char * value = argv[++index];
@@ -148,16 +148,16 @@ int run_inference(int argc, char ** argv) {
             else if (argument == "--ram-budget-bytes") options.ram_budget_bytes = std::stoull(value);
             else if (argument == "--compute-layout") options.use_compute_layout = parse_int(value) != 0;
             else {
-                fprintf(stderr, "celiums-bitnet run: unknown argument '%s'\n", argument.c_str());
+                fprintf(stderr, "hyphae-bitnet run: unknown argument '%s'\n", argument.c_str());
                 return 2;
             }
         }
     } catch (const std::exception & error) {
-        fprintf(stderr, "celiums-bitnet run: %s\n", error.what());
+        fprintf(stderr, "hyphae-bitnet run: %s\n", error.what());
         return 2;
     }
     if (!options.model || !options.prompt) {
-        fprintf(stderr, "celiums-bitnet run: --model and --prompt are required\n");
+        fprintf(stderr, "hyphae-bitnet run: --model and --prompt are required\n");
         return 2;
     }
 
@@ -209,7 +209,7 @@ int run_inference(int argc, char ** argv) {
     }
     printf("\n");
     if (status != CELIUMS_BITNET_STATUS_OK) {
-        fprintf(stderr, "celiums-bitnet run: %s\n", celiums_bitnet_status_string(status));
+        fprintf(stderr, "hyphae-bitnet run: %s\n", celiums_bitnet_status_string(status));
     }
     celiums_bitnet_request_destroy(request);
     celiums_bitnet_session_destroy(session);
@@ -234,19 +234,19 @@ int validate_model(int argc, char ** argv) {
             try {
                 family = parse_model_family(argv[++index]);
             } catch (const std::exception & error) {
-                fprintf(stderr, "celiums-bitnet validate: %s\n", error.what());
+                fprintf(stderr, "hyphae-bitnet validate: %s\n", error.what());
                 return 2;
             }
         } else if (strcmp(argv[index], "--help") == 0 || strcmp(argv[index], "-h") == 0) {
             printf("Usage: %s --model MODEL.gguf [--model-family bitnet|bonsai]\n", argv[0]);
             return 0;
         } else {
-            fprintf(stderr, "celiums-bitnet validate: unknown argument '%s'\n", argv[index]);
+            fprintf(stderr, "hyphae-bitnet validate: unknown argument '%s'\n", argv[index]);
             return 2;
         }
     }
     if (!path) {
-        fprintf(stderr, "celiums-bitnet validate: --model is required\n");
+        fprintf(stderr, "hyphae-bitnet validate: --model is required\n");
         return 2;
     }
 
@@ -260,7 +260,7 @@ int validate_model(int argc, char ** argv) {
         status = celiums_bitnet_model_validate_family(runtime, path, family, &info);
     }
     if (status != CELIUMS_BITNET_STATUS_OK) {
-        fprintf(stderr, "celiums-bitnet validate: %s\n", celiums_bitnet_status_string(status));
+        fprintf(stderr, "hyphae-bitnet validate: %s\n", celiums_bitnet_status_string(status));
         celiums_bitnet_runtime_destroy(runtime);
         return 1;
     }
@@ -302,6 +302,6 @@ int main(int argc, char ** argv) {
         return serve(argc - 1, argv + 1);
     }
 #endif
-    fprintf(stderr, "celiums-bitnet: unknown command '%s'\n", argv[1]);
+    fprintf(stderr, "hyphae-bitnet: unknown command '%s'\n", argv[1]);
     return 2;
 }

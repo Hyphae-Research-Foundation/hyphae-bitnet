@@ -141,7 +141,7 @@ def convert_model(args, model_dir):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Build Celiums BitNet and optionally prepare a model")
+    parser = argparse.ArgumentParser(description="Build Hyphae BitNet and optionally prepare a model")
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--hf-repo", choices=SUPPORTED_HF_MODELS)
     source.add_argument("--local-model-dir", type=Path)

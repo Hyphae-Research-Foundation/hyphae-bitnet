@@ -80,6 +80,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.97.1
       - run: ALLOW_DIRTY=1 JOBS=2 ./scripts/package-runtime.sh scalar /tmp/package-build /tmp/package-stage package.tar.gz
       - run: set -o pipefail; tar -tzf package.tar.gz | sort; test -f package.tar.gz.json
+      - run: /tmp/package-stage/usr/bin/hyphae-bitnet version
       - run: /tmp/package-stage/usr/bin/celiums-bitnet version
       - run: /tmp/package-stage/usr/bin/celiums-runtime-gateway version
       - run: test -x /tmp/package-stage/usr/bin/celiums-hyphae-sidecar && test -x /tmp/package-stage/usr/bin/celiums-runtime-mcp

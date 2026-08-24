@@ -2,13 +2,13 @@
 
 ## Supported Versions
 
-Security fixes are provided for the latest Celiums BitNet release. Development
+Security fixes are provided for the latest Hyphae BitNet release. Development
 snapshots are supported on a best-effort basis.
 
 ## Reporting A Vulnerability
 
 Do not disclose vulnerabilities in a public issue. Use private vulnerability
-reporting on the Celiums BitNet repository when it is available, or contact
+reporting on the Hyphae BitNet repository when it is available, or contact
 Celiums Solutions LLC through the private security channel listed on the
 Celiums organization profile.
 

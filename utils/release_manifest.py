@@ -31,7 +31,7 @@ def command_version(command):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Write a Celiums BitNet Runtime build manifest")
+    parser = argparse.ArgumentParser(description="Write a Hyphae BitNet Runtime build manifest")
     parser.add_argument("--profile", choices=("native", "avx2", "scalar"), required=True)
     parser.add_argument("--build-type", default="Release")
     parser.add_argument("--compiler", required=True)

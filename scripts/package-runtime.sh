@@ -34,7 +34,7 @@ case "$profile" in
   native|avx2|scalar) ;;
   *) printf 'Unknown CPU profile: %s\n' "$profile" >&2; exit 2 ;;
 esac
-archive=${4:-celiums-bitnet-runtime-${version}-linux-x86_64-${profile}.tar.gz}
+archive=${4:-hyphae-bitnet-runtime-${version}-linux-x86_64-${profile}.tar.gz}
 
 build_dir=$(realpath -m "$build_dir")
 stage_dir=$(realpath -m "$stage_dir")

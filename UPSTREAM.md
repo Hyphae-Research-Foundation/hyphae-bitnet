@@ -1,6 +1,6 @@
 # Upstream
 
-Celiums BitNet is derived from [Microsoft BitNet](https://github.com/microsoft/BitNet).
+Hyphae BitNet is derived from [Microsoft BitNet](https://github.com/microsoft/BitNet).
 
 ## Baseline
 

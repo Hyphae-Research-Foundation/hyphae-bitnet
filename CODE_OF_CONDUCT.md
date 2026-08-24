@@ -1,6 +1,6 @@
 # Code Of Conduct
 
-Celiums BitNet contributors must communicate professionally and respectfully.
+Hyphae BitNet contributors must communicate professionally and respectfully.
 Harassment, discrimination, threats, disclosure of private information, and
 deliberate disruption are not tolerated.
 

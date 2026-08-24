@@ -26,7 +26,7 @@ BONSAI_MODEL = Path(os.environ["CELIUMS_BONSAI_TEST_MODEL"]) if os.environ.get(
 VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
 
-def binary(name="celiums-bitnet"):
+def binary(name="hyphae-bitnet"):
     candidates = [BUILD_DIR / "bin" / name, BUILD_DIR / "bin" / "Release" / f"{name}.exe"]
     return next((candidate for candidate in candidates if candidate.exists()), candidates[0])
 
@@ -40,7 +40,7 @@ def clean_environment(**values):
 
 
 class RuntimeProductTests(unittest.TestCase):
-    def require_binary(self, name="celiums-bitnet"):
+    def require_binary(self, name="hyphae-bitnet"):
         path = binary(name)
         if not path.exists():
             self.skipTest(f"product test build is unavailable: {path}")
@@ -61,9 +61,9 @@ class RuntimeProductTests(unittest.TestCase):
         output = subprocess.run(
             [str(executable), "version"], cwd=ROOT, check=True, capture_output=True, text=True
         ).stdout
-        if f"Celiums BitNet Runtime {VERSION}" not in output:
+        if f"Hyphae BitNet Runtime {VERSION}" not in output:
             self.skipTest(f"product test build is stale: {executable}")
-        self.assertIn(f"Celiums BitNet Runtime {VERSION}", output)
+        self.assertIn(f"Hyphae BitNet Runtime {VERSION}", output)
         self.assertRegex(output, r"product commit: [0-9a-f]{9}")
         self.assertRegex(output, r"engine commit: [0-9a-f]{9}")
         self.assertRegex(output, r"engine tree: [0-9a-f]{40}")
@@ -97,7 +97,7 @@ class RuntimeProductTests(unittest.TestCase):
                 cwd=ROOT, check=True, capture_output=True, text=True,
             )
             help_output = subprocess.run(
-                [str(Path(temp_dir) / "bin" / "celiums-bitnet"), "help"],
+                [str(Path(temp_dir) / "bin" / "hyphae-bitnet"), "help"],
                 check=True, capture_output=True, text=True,
             ).stdout
             targets = subprocess.run(
@@ -111,12 +111,13 @@ class RuntimeProductTests(unittest.TestCase):
         if not INSTALL_PREFIX:
             self.skipTest("CELIUMS_BITNET_TEST_INSTALL_PREFIX is not set")
         prefix = Path(INSTALL_PREFIX)
-        installed = prefix / "bin" / "celiums-bitnet"
+        installed = prefix / "bin" / "hyphae-bitnet"
         self.assertTrue(installed.is_file(), f"installed CLI is unavailable: {installed}")
+        self.assertTrue((prefix / "bin" / "celiums-bitnet").exists())
         output = subprocess.run(
             [str(installed), "version"], cwd="/tmp", check=True, capture_output=True, text=True
         ).stdout
-        self.assertIn(f"Celiums BitNet Runtime {VERSION}", output)
+        self.assertIn(f"Hyphae BitNet Runtime {VERSION}", output)
         gateway = prefix / "bin" / "celiums-runtime-gateway"
         sidecar = prefix / "bin" / "celiums-hyphae-sidecar"
         mcp = prefix / "bin" / "celiums-runtime-mcp"

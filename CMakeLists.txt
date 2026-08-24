@@ -4,7 +4,7 @@ string(STRIP "${CELIUMS_BITNET_VERSION}" CELIUMS_BITNET_VERSION)
 if (NOT CELIUMS_BITNET_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
     message(FATAL_ERROR "VERSION must contain a semantic version")
 endif()
-project(CeliumsBitNetRuntime VERSION ${CELIUMS_BITNET_VERSION} LANGUAGES C CXX)
+project(HyphaeBitNetRuntime VERSION ${CELIUMS_BITNET_VERSION} LANGUAGES C CXX)
 include(CheckIncludeFileCXX)
 include(CTest)
 include(CMakePackageConfigHelpers)
@@ -248,11 +248,13 @@ if (CELIUMS_BITNET_BUILD_SERVER)
 endif()
 
 set_target_properties(celiums-bitnet PROPERTIES
+    OUTPUT_NAME hyphae-bitnet
     BUILD_RPATH "$ORIGIN"
     INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}/celiums-bitnet-runtime")
 
 if (BUILD_SHARED_LIBS)
 install(TARGETS celiums-bitnet RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(CODE "file(CREATE_LINK hyphae-bitnet \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/celiums-bitnet\" SYMBOLIC)")
 install(TARGETS celiums-bitnet-runtime
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/celiums-bitnet-runtime
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/celiums-bitnet-runtime

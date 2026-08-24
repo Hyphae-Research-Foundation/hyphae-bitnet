@@ -1,7 +1,7 @@
-Celiums BitNet
+Hyphae BitNet
 Copyright 2026 Celiums Solutions LLC
 
-Celiums BitNet is an independent derivative of Microsoft BitNet:
+Hyphae BitNet is an independent derivative of Microsoft BitNet:
 https://github.com/microsoft/BitNet
 
 Initial Microsoft BitNet baseline:
@@ -26,7 +26,7 @@ licenses and attribution notices.
 The experimental GPU sources derived from xFormers retain the BSD 3-Clause
 terms reproduced in LICENSE-BSD-3-Clause.
 
-Celiums BitNet is not affiliated with, sponsored by, endorsed by, or supported
+Hyphae BitNet is not affiliated with, sponsored by, endorsed by, or supported
 by Microsoft. Microsoft, BitNet, Hugging Face, model names, and other
 third-party names may be trademarks of their respective owners.
 

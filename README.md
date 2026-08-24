@@ -1,10 +1,10 @@
 <div align="center">
 
-# Celiums BitNet Runtime
+# Hyphae BitNet Runtime
 
 ### Ternary models on CPU. Packed on disk. RAM as a serving lever. Exact math.
 
-[![License](https://img.shields.io/badge/Celiums%20code-Apache--2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/Hyphae%20BitNet-Apache--2.0-blue.svg)](LICENSE)
 [![Upstream](https://img.shields.io/badge/upstream-Microsoft%20BitNet-5C2D91.svg)](UPSTREAM.md)
 [![Version](https://img.shields.io/badge/version-0.3.1-111827.svg)](CHANGES.md)
 [![I2_S](https://img.shields.io/badge/I2__S-contract%20validated-0F766E.svg)](docs/NUMERICAL_CONTRACT.md)
@@ -12,11 +12,15 @@
 
 </div>
 
-Celiums BitNet is a **CPU inference runtime for ternary networks**, not a
-wrapper around `llama-cli`. The public product is `celiums-bitnet`: one-shot
+Hyphae BitNet is a **CPU inference runtime for ternary networks**, not a
+wrapper around `llama-cli`. The public product is `hyphae-bitnet`: one-shot
 generation, a native HTTP server, an experimental C ABI, and JSONL
 prefill/decode benches. The engine is vendored llama.cpp/ggml at
-`3rdparty/llama.cpp`. Applications talk to Celiums, not to GGML.
+`3rdparty/llama.cpp`. Applications talk to Hyphae BitNet, not to GGML.
+
+The experimental C ABI, environment variables, shared-library SONAME, and
+machine-readable evidence schemas retain their historical `celiums_*` and
+`CELIUMS_*` namespaces for compatibility with existing clients.
 
 Two families are in the product surface:
 
@@ -30,7 +34,8 @@ those kernels; the loader refuses them. Prism `Q2_0` is unsupported (its
 type IDs collide with Celiums TL2/I2_S).
 
 > [!IMPORTANT]
-> Maintained by Celiums Solutions LLC. Not affiliated with, sponsored by,
+> Maintained by Hyphae Research Foundation, with Celiums Solutions LLC as the
+> original author and interim custodian. Not affiliated with, sponsored by,
 > endorsed by, or supported by Microsoft. Upstream BitNet, llama.cpp, ggml,
 > and model artifacts keep their own copyright and licenses.
 
@@ -50,10 +55,10 @@ That is this work:
 
 1. **Packed GGUF stays the durable store.** We do not clone the file in RAM
    and we do not treat NVMe as the inference path.
-2. **RAM is a compute working set.** On ARM with i8mm, Q1 expands to int8
-   ±1 so existing `usdot` kernels run. On x86, Q1 stays bit-packed 4×8 and
-   uses `vpdpbusd` (2P−S). Expanding x86 Q1 to bytes would blow DRAM on
-   decode; Graviton already showed that at 96 threads.
+2. **RAM is a compute working set.** Current ARM builds keep Q1 bit-packed and
+   decode signs directly into DOTPROD/I8MM tiles. On x86, Q1 stays bit-packed
+   4x8 and uses `vpdpbusd` (2P-S). The former ARM int8 expansion remains in
+   dated benchmark receipts, not in the current compute layout.
 3. **Every extra byte is capped.** `--ram-budget-bytes` is fail-closed:
    `CELIUMS_BITNET_STATUS_RAM_BUDGET_EXCEEDED` at model load or session
    create. Production default in the metal receipts is 64 GiB on 755 GiB
@@ -73,7 +78,7 @@ GGUF on disk (I2_S or Q1_0, mmap)
         |  optional compute layout, charged against ram_budget
         v
 in-RAM image
-  ARM i8mm : Q1 -> q8_0 4x8  (~8x bytes, ~26 GiB for Bonsai)
+  ARM i8mm : Q1 4x8 bit-packed panels (direct sign decode)
   x86 VNNI : Q1 4x8 bit-packed panels (~3.4 GiB)
   I2_S     : tinyBLAS VNNI, no Q1 expand
         |
@@ -107,7 +112,7 @@ leaving at least 4 GiB or 10% free.
 
 ## What the changes add (measured)
 
-All figures are `celiums-bitnet bench`, Bonsai 27B Q1_0 SHA
+All figures are historical `celiums-bitnet bench` receipts, Bonsai 27B Q1_0 SHA
 `17ef842e47450caeb8eaa3ebfbbab5d2f2278b62b79be107985fb69a2f819aa0`,
 pp128 / tg128, cap 64 GiB. Metals were destroyed after the receipts.
 
@@ -158,7 +163,7 @@ Hot-path review: [`docs/VENDORED_CPU_HOT_PATH.md`](docs/VENDORED_CPU_HOT_PATH.md
 | CPU text family | PrismML Bonsai 27B `Q1_0` via `--model-family bonsai` |
 | Runtime | CPU only; one-shot generation, tokenize, prefill, decode, logits, sampling, callbacks, stops, cancel |
 | CPU profiles | `native`, portable x86-64 `avx2`, scalar reference |
-| Public interfaces | `celiums-bitnet` CLI, experimental C ABI v1, native HTTP API |
+| Public interfaces | `hyphae-bitnet` CLI (`celiums-bitnet` compatibility alias), experimental C ABI v1, native HTTP API |
 | Serving knobs | RAM budget, compute layout, `n_seq` |
 | Optional local AI | Hyphae RAG / memory / receipts / MCP |
 | Release platform | Linux x86-64 shared-library archives |
@@ -180,7 +185,7 @@ certification target.
 ### Install a release archive
 
 After `v0.3.0` is published, download an archive and its matching manifest from
-[GitHub Releases](https://github.com/celiumsai/celiums-bitnet/releases). Choose:
+[GitHub Releases](https://github.com/Hyphae-Research-Foundation/hyphae-bitnet/releases). Choose:
 
 - `native` only for the same CPU class as the release builder;
 - `avx2` for x86-64 CPUs with SSE4.2, AVX, AVX2, FMA, and F16C;
@@ -188,15 +193,15 @@ After `v0.3.0` is published, download an archive and its matching manifest from
 
 ```bash
 PROFILE=avx2
-ARCHIVE="celiums-bitnet-runtime-0.3.0-linux-x86_64-${PROFILE}.tar.gz"
+ARCHIVE="celiums-bitnet-runtime-0.3.0-linux-x86_64-${PROFILE}.tar.gz" # historical v0.3.0 asset
 MANIFEST="${ARCHIVE}.json"
 
 expected=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifacts"][0]["sha256"])' "$MANIFEST")
 printf '%s  %s\n' "$expected" "$ARCHIVE" | sha256sum -c -
 
-mkdir celiums-bitnet-0.3.0
-tar -xzf "$ARCHIVE" -C celiums-bitnet-0.3.0
-celiums-bitnet-0.3.0/usr/bin/celiums-bitnet version
+mkdir hyphae-bitnet-0.3.0
+tar -xzf "$ARCHIVE" -C hyphae-bitnet-0.3.0
+hyphae-bitnet-0.3.0/usr/bin/celiums-bitnet version
 ```
 
 The archive is a `/usr`-shaped relocatable payload.
@@ -204,8 +209,8 @@ The archive is a `/usr`-shaped relocatable payload.
 ### Build from source
 
 ```bash
-git clone https://github.com/celiumsai/celiums-bitnet.git
-cd celiums-bitnet
+git clone https://github.com/Hyphae-Research-Foundation/hyphae-bitnet.git
+cd hyphae-bitnet
 
 python3.12 -m venv .venv
 source .venv/bin/activate

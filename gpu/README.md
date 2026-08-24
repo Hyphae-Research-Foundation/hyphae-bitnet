@@ -1,7 +1,7 @@
 # BitNet Inference Kernel
 
 This directory contains the inherited Microsoft BitNet GPU prototype. It is
-experimental in Celiums BitNet: the current dispatcher is shape-specific and
+experimental in Hyphae BitNet: the current dispatcher is shape-specific and
 the upstream build targets CUDA compute capability 8.0. It is not part of the
 strict backend guarantee yet.
 

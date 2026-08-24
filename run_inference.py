@@ -11,16 +11,16 @@ ROOT = Path(__file__).resolve().parent
 
 
 def binary_path():
-    candidates = [ROOT / "build" / "bin" / "celiums-bitnet"]
+    candidates = [ROOT / "build" / "bin" / name for name in ("hyphae-bitnet", "celiums-bitnet")]
     if platform.system() == "Windows":
-        candidates.insert(0, ROOT / "build" / "bin" / "Release" / "celiums-bitnet.exe")
+        candidates.insert(0, ROOT / "build" / "bin" / "Release" / "hyphae-bitnet.exe")
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    installed = shutil.which("celiums-bitnet")
+    installed = shutil.which("hyphae-bitnet") or shutil.which("celiums-bitnet")
     if installed:
         return Path(installed)
-    raise FileNotFoundError("celiums-bitnet was not found; build or install Celiums BitNet Runtime first")
+    raise FileNotFoundError("hyphae-bitnet was not found; build or install Hyphae BitNet Runtime first")
 
 
 def build_command(args):
@@ -46,7 +46,7 @@ def build_command(args):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run Celiums BitNet inference")
+    parser = argparse.ArgumentParser(description="Run Hyphae BitNet inference")
     parser.add_argument("-m", "--model", type=Path, required=True)
     parser.add_argument("--model-family", choices=["bitnet", "bonsai"], default="bitnet")
     parser.add_argument("-n", "--n-predict", type=int, default=128)
