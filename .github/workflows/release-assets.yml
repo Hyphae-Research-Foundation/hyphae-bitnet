@@ -1,0 +1,44 @@
+name: Release Assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    if: startsWith(inputs.tag, 'v')
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [native, avx2, scalar]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - run: test "$(tr -d '[:space:]' < VERSION)" = "${RELEASE_TAG#v}"
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+      - run: >-
+          JOBS=2 ./scripts/package-runtime.sh ${{ matrix.profile }}
+          /tmp/release-build-${{ matrix.profile }}
+          /tmp/release-stage-${{ matrix.profile }}
+          hyphae-bitnet-runtime-${RELEASE_TAG#v}-linux-x86_64-${{ matrix.profile }}.tar.gz
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+      - run: >-
+          gh release upload "${RELEASE_TAG}"
+          hyphae-bitnet-runtime-${RELEASE_TAG#v}-linux-x86_64-${{ matrix.profile }}.tar.gz
+          hyphae-bitnet-runtime-${RELEASE_TAG#v}-linux-x86_64-${{ matrix.profile }}.tar.gz.json
+          --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
