@@ -162,10 +162,7 @@ class RuntimeProductTests(unittest.TestCase):
         self.assertEqual(consumer, VERSION)
 
         library_dir = next(
-            path for path in (
-                prefix / "lib" / "celiums-bitnet-runtime",
-                prefix / "lib64" / "celiums-bitnet-runtime",
-            ) if path.is_dir()
+            path for path in prefix.glob("lib*/**/celiums-bitnet-runtime") if path.is_dir()
         )
         library = library_dir / "libceliums-bitnet-runtime.so"
         self.assertTrue(library.exists(), f"installed runtime library is unavailable: {library}")

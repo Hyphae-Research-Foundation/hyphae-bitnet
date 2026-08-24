@@ -98,9 +98,8 @@ jobs:
           -DCELIUMS_BITNET_VERIFY_ENGINE_TREE=ON
           -DGGML_CPU_ARM_ARCH=armv8.6-a+dotprod+i8mm+sve2
       - run: cmake --build build-armv8.6 --parallel 2 --target test-q1-repack-oracle
-      - run: >-
-          objdump -d build-armv8.6/bin/test-q1-repack-oracle |
-          grep -Eq '\baddp\b'
+      - run: objdump -t -C build-armv8.6/bin/libggml-cpu.so | grep -F 'ggml_gemv_q1_0_4x8_q8_0_sve2'
+      - run: objdump -d build-armv8.6/bin/libggml-cpu.so | grep -Eq '\baddp\b'
 
   gateway:
     runs-on: ubuntu-24.04
