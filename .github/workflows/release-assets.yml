@@ -30,7 +30,7 @@ jobs:
       - run: >-
           JOBS=2 ./scripts/package-runtime.sh ${{ matrix.profile }}
           /tmp/release-build-${{ matrix.profile }}
-          /tmp/release-stage-${{ matrix.profile }}
+          /tmp/stage-release-${{ matrix.profile }}
           hyphae-bitnet-runtime-${RELEASE_TAG#v}-linux-x86_64-${{ matrix.profile }}.tar.gz
         env:
           RELEASE_TAG: ${{ inputs.tag }}
