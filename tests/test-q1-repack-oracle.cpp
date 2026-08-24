@@ -1,5 +1,4 @@
-/* Packed Q1_0 vs in-RAM compute layout. No 27B fixture.
- * ARM i8mm expands Q1 to q8_0 4x8 (±1). x86 keeps 1-bit 4x8 panels. */
+/* Packed Q1_0 vs in-RAM compute layout. No 27B fixture. */
 #define GGML_COMMON_IMPL_CPP
 #include "ggml.h"
 #include "ggml-common.h"
@@ -8,58 +7,52 @@
 #include "ggml-cpu/quants.h"
 #include "celiums-exact.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <vector>
 
-static bool expand_q1_to_q8(void) {
-    return ggml_cpu_has_neon() && ggml_cpu_has_matmul_int8();
-}
-
 static void interleave_q1_4x8(const block_q1_0 * packed, int nb, block_q1_0x4 * interleaved) {
     celiums_exact_q1_pack_4x8(packed, nb, interleaved);
 }
 
-static void expand_q1_to_q8_4x8(const block_q1_0 * packed, int nb, block_q8_0x4 * out) {
-    int dst = 0;
+static void interleave_q1_4x4(const block_q1_0 * packed, int nb, block_q1_0x4 * interleaved) {
     for (int l = 0; l < nb; ++l) {
-        block_q8_0 tmp[4];
-        for (int slice = 0; slice < QK1_0 / QK8_0; ++slice) {
-            for (int row = 0; row < 4; ++row) {
-                tmp[row].d = packed[row * nb + l].d;
-                const uint8_t * bits = packed[row * nb + l].qs + slice * 4;
-                for (int b = 0; b < 4; ++b) {
-                    const uint8_t mask = bits[b];
-                    for (int p = 0; p < 8; ++p) {
-                        tmp[row].qs[b * 8 + p] = (int8_t) ((mask & (1u << p)) ? 1 : -1);
+        for (int row = 0; row < 4; ++row) {
+            interleaved[l].d[row] = packed[row * nb + l].d;
+        }
+        for (int k = 0; k < QK1_0 / QK8_0; ++k) {
+            for (int tile = 0; tile < QK8_0 / 4; ++tile) {
+                uint8_t packed_lo = 0;
+                uint8_t packed_hi = 0;
+                const int weight_base = k * QK8_0 + tile * 4;
+                for (int pos = 0; pos < 4; ++pos) {
+                    const int weight_idx = weight_base + pos;
+                    const int byte_idx = weight_idx / 8;
+                    const int bit_idx = weight_idx % 8;
+                    packed_lo |= ((packed[0 * nb + l].qs[byte_idx] >> bit_idx) & 1u) << pos;
+                    packed_lo |= ((packed[1 * nb + l].qs[byte_idx] >> bit_idx) & 1u) << (4 + pos);
+                    packed_hi |= ((packed[2 * nb + l].qs[byte_idx] >> bit_idx) & 1u) << pos;
+                    packed_hi |= ((packed[3 * nb + l].qs[byte_idx] >> bit_idx) & 1u) << (4 + pos);
                     }
-                }
+                interleaved[l].qs[k * 16 + 2 * tile + 0] = packed_lo;
+                interleaved[l].qs[k * 16 + 2 * tile + 1] = packed_hi;
             }
-            for (int i = 0; i < 4; ++i) {
-                out[dst].d[i] = tmp[i].d;
-            }
-            const int end = QK8_0 * 4 / 8;
-            for (int i = 0; i < end; ++i) {
-                const int src_id = i % 4;
-                const int src_offset = (i / 4) * 8;
-                memcpy(out[dst].qs + i * 8, tmp[src_id].qs + src_offset, 8);
-            }
-            ++dst;
         }
     }
 }
 
-static void interleave_q8_4x8(const block_q8_0 rows[4], block_q8_0x4 * out) {
+static void interleave_q8(const block_q8_0 rows[4], int blocklen, block_q8_0x4 * out) {
     for (int i = 0; i < 4; ++i) {
         out->d[i] = rows[i].d;
     }
-    const int end = QK8_0 * 4 / 8;
+    const int end = QK8_0 * 4 / blocklen;
     for (int i = 0; i < end; ++i) {
         const int src_id = i % 4;
-        const int src_offset = (i / 4) * 8;
-        memcpy(out->qs + i * 8, rows[src_id].qs + src_offset, 8);
+        const int src_offset = (i / 4) * blocklen;
+        memcpy(out->qs + i * blocklen, rows[src_id].qs + src_offset, blocklen);
     }
 }
 
@@ -114,27 +107,23 @@ static int test_gemv(int n) {
         return 1;
     }
 
+    std::vector<block_q1_0x4> interleaved((size_t) nb);
     float layout_out[4] = { 0, 0, 0, 0 };
-    if (expand_q1_to_q8()) {
-        std::vector<block_q8_0x4> expanded((size_t) nb * (QK1_0 / QK8_0));
-        expand_q1_to_q8_4x8(packed.data(), nb, expanded.data());
-        ggml_gemv_q1_0_4x8_q8_0(n, layout_out, 0, expanded.data(), act.data(), 1, nc);
-    } else {
-        std::vector<block_q1_0x4> interleaved((size_t) nb);
-        interleave_q1_4x8(packed.data(), nb, interleaved.data());
-        ggml_gemv_q1_0_4x8_q8_0(n, layout_out, 0, interleaved.data(), act.data(), 1, nc);
-        float generic_out[4] = { 0, 0, 0, 0 };
-        ggml_gemv_q1_0_4x8_q8_0_generic(n, generic_out, 0, interleaved.data(), act.data(), 1, nc);
-        for (int row = 0; row < nc; ++row) {
-            if (check3("gemv-generic", row, packed_out[row], layout_out[row], generic_out[row])) {
-                return 1;
-            }
+    float generic_out[4] = { 0, 0, 0, 0 };
+    interleave_q1_4x8(packed.data(), nb, interleaved.data());
+    ggml_gemv_q1_0_4x8_q8_0(n, layout_out, 0, interleaved.data(), act.data(), 1, nc);
+    ggml_gemv_q1_0_4x8_q8_0_generic(n, generic_out, 0, interleaved.data(), act.data(), 1, nc);
+    for (int row = 0; row < nc; ++row) {
+        if (check3("gemv-4x8", row, packed_out[row], layout_out[row], generic_out[row])) {
+            return 1;
         }
-        return 0;
     }
 
+    interleave_q1_4x4(packed.data(), nb, interleaved.data());
+    memset(layout_out, 0, sizeof(layout_out));
+    ggml_gemv_q1_0_4x4_q8_0(n, layout_out, 0, interleaved.data(), act.data(), 1, nc);
     for (int row = 0; row < nc; ++row) {
-        if (check3("gemv", row, packed_out[row], layout_out[row], layout_out[row])) {
+        if (check3("gemv-4x4", row, packed_out[row], layout_out[row], layout_out[row])) {
             return 1;
         }
     }
@@ -171,14 +160,16 @@ static int test_gemm(int n, int nr) {
         }
     }
 
-    std::vector<block_q8_0x4> act4((size_t) (nr / 4) * (size_t) nq8);
+    std::vector<block_q8_0x4> act4x8((size_t) (nr / 4) * (size_t) nq8);
+    std::vector<block_q8_0x4> act4x4((size_t) (nr / 4) * (size_t) nq8);
     for (int group = 0; group < nr / 4; ++group) {
         for (int i = 0; i < nq8; ++i) {
             block_q8_0 rows[4];
             for (int m = 0; m < 4; ++m) {
                 rows[m] = act[(size_t) (group * 4 + m) * (size_t) nq8 + (size_t) i];
             }
-            interleave_q8_4x8(rows, &act4[(size_t) group * (size_t) nq8 + (size_t) i]);
+            interleave_q8(rows, 8, &act4x8[(size_t) group * (size_t) nq8 + (size_t) i]);
+            interleave_q8(rows, 4, &act4x4[(size_t) group * (size_t) nq8 + (size_t) i]);
         }
     }
 
@@ -194,25 +185,22 @@ static int test_gemm(int n, int nr) {
     std::vector<float> layout_out((size_t) nr * (size_t) nc, 0.0f);
     char what[32];
     std::snprintf(what, sizeof(what), "gemm-nr%d", nr);
-    if (expand_q1_to_q8()) {
-        std::vector<block_q8_0x4> expanded((size_t) nq8);
-        expand_q1_to_q8_4x8(packed.data(), nb, expanded.data());
-        ggml_gemm_q1_0_4x8_q8_0(n, layout_out.data(), nc, expanded.data(), act4.data(), nr, nc);
-        for (int idx = 0; idx < nr * nc; ++idx) {
-            if (check3(what, idx, packed_out[(size_t) idx], layout_out[(size_t) idx], layout_out[(size_t) idx])) {
-                return 1;
-            }
-        }
-        return 0;
-    }
-
     std::vector<block_q1_0x4> interleaved((size_t) nb);
     interleave_q1_4x8(packed.data(), nb, interleaved.data());
-    ggml_gemm_q1_0_4x8_q8_0(n, layout_out.data(), nc, interleaved.data(), act4.data(), nr, nc);
+    ggml_gemm_q1_0_4x8_q8_0(n, layout_out.data(), nc, interleaved.data(), act4x8.data(), nr, nc);
     std::vector<float> generic_out((size_t) nr * (size_t) nc, 0.0f);
-    ggml_gemm_q1_0_4x8_q8_0_generic(n, generic_out.data(), nc, interleaved.data(), act4.data(), nr, nc);
+    ggml_gemm_q1_0_4x8_q8_0_generic(n, generic_out.data(), nc, interleaved.data(), act4x8.data(), nr, nc);
     for (int idx = 0; idx < nr * nc; ++idx) {
-        if (check3(what, idx, packed_out[(size_t) idx], layout_out[(size_t) idx], generic_out[(size_t) idx])) {
+        if (check3("gemm-4x8", idx, packed_out[(size_t) idx], layout_out[(size_t) idx], generic_out[(size_t) idx])) {
+            return 1;
+        }
+    }
+
+    interleave_q1_4x4(packed.data(), nb, interleaved.data());
+    std::fill(layout_out.begin(), layout_out.end(), 0.0f);
+    ggml_gemm_q1_0_4x4_q8_0(n, layout_out.data(), nc, interleaved.data(), act4x4.data(), nr, nc);
+    for (int idx = 0; idx < nr * nc; ++idx) {
+        if (check3(what, idx, packed_out[(size_t) idx], layout_out[(size_t) idx], layout_out[(size_t) idx])) {
             return 1;
         }
     }
